@@ -38,7 +38,7 @@ EzCursor là một lớp phủ (overlay) chạy bên ngoài game: nó chỉ đ�
 
 ## Tự build từ mã nguồn
 
-Cần Python 3 (64-bit). Đặt các file cùng một thư mục rồi chạy `build_installer.bat`. File này sẽ cài thư viện, đóng gói `EzCursor.exe` bằng PyInstaller và tạo bộ cài bằng Inno Setup 6. Bộ cài nằm trong thư mục `installer`.
+Cần Python 3 (64-bit). Đặt các file (kèm thư mục `fonts`) cùng một thư mục rồi chạy `build_installer.bat`. File này sẽ cài thư viện, đóng gói `EzCursor.exe` bằng PyInstaller và tạo bộ cài bằng Inno Setup 6. Bộ cài nằm trong thư mục `installer`.
 
 ---
 
@@ -53,3 +53,7 @@ Cần Python 3 (64-bit). Đặt các file cùng một thư mục rồi chạy `b
 - EzCursor is an external overlay; it does not modify game files or memory. Use at your own discretion and follow each game's terms of service.
 
 Licensed under the [MIT License](LICENSE).
+
+### Font
+
+EzCursor đi kèm font [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) và [Be Vietnam Pro](https://fonts.google.com/specimen/Be+Vietnam+Pro), phát hành theo giấy phép SIL Open Font License (xem các file `OFL-*.txt` trong thư mục `fonts`).
