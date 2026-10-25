@@ -16,8 +16,11 @@ import colorsys
 import ctypes
 import io
 import json
+import logging
+import logging.handlers
 import math
 import os
+import platform
 import random
 import queue
 import shutil
@@ -27,6 +30,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import urllib.request
 import webbrowser
 import tkinter as tk
@@ -40,7 +44,7 @@ import pystray
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageSequence, ImageTk
 
 APP_NAME = "EzCursor"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
 GITHUB_REPO = "ezcursor/EzCursor"
@@ -94,7 +98,12 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 mag = ctypes.windll.magnification
 mag.MagInitialize()
+try:          # luôn hiện con trỏ thật khi khởi động (phòng lần chạy trước bị tắt ngang)
+    mag.MagShowSystemCursor(True)
+except Exception:
+    pass
 _cursor_shown = True
+log = logging.getLogger("ezcursor")
 
 
 def show_real_cursor(show):
@@ -114,6 +123,44 @@ def cleanup():
 
 
 atexit.register(cleanup)
+
+
+def emergency_cursor():
+    """Trả con trỏ thật ngay lập tức, dùng khi có lỗi."""
+    global _cursor_shown
+    try:
+        mag.MagShowSystemCursor(True)
+        _cursor_shown = True
+    except Exception:
+        pass
+
+
+def _excepthook(exc_type, exc, tb):
+    emergency_cursor()
+    try:
+        log.critical("Lỗi chưa xử lý:\n%s", "".join(traceback.format_exception(exc_type, exc, tb)))
+    except Exception:
+        pass
+    sys.__excepthook__(exc_type, exc, tb)
+
+
+def _thread_excepthook(args):
+    emergency_cursor()
+    try:
+        log.error("Lỗi trong luồng %s:\n%s", getattr(args.thread, "name", "?"),
+                  "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)))
+    except Exception:
+        pass
+
+
+sys.excepthook = _excepthook
+threading.excepthook = _thread_excepthook
+
+
+def mouse_buttons():
+    """(chuột trái, chuột phải) đang giữ, theo nút logic (tính cả khi người dùng đổi nút chuột)."""
+    l, r = bool(key_down(0x01)), bool(key_down(0x02))
+    return (r, l) if user32.GetSystemMetrics(23) else (l, r)     # SM_SWAPBUTTON
 
 
 def key_down(vk):
@@ -260,6 +307,10 @@ DEFAULT_CFG = {
     "bibata_theme": "amber",
     "bibata_style": "modern",
     "bibata_hand": "right",
+    "hold_left": False,
+    "hold_left_color": "#22D3EE",
+    "hold_right": False,
+    "hold_right_color": "#FFD60A",
     "hide_real": True,
     "enabled": True,
     "all_apps": False,
@@ -326,7 +377,8 @@ def default_cfg():
 # Các cài đặt thuộc về "kiểu con trỏ": mỗi hồ sơ game có một bộ riêng
 STYLE_KEYS = ("color", "shape", "size", "image", "hotspot", "tint_image", "glow", "cursor_sparkle",
               "fx_trail", "fx_click", "fx_color", "fx_density",
-              "bibata_cursor", "bibata_theme", "bibata_style", "bibata_hand")
+              "bibata_cursor", "bibata_theme", "bibata_style", "bibata_hand",
+              "hold_left", "hold_left_color", "hold_right", "hold_right_color")
 
 
 def clean_style(cfg):
@@ -353,9 +405,10 @@ def clean_style(cfg):
         cfg["fx_color"] = "cursor"
     if cfg["fx_density"] not in ("low", "mid", "high"):
         cfg["fx_density"] = "mid"
-    if not isinstance(cfg["color"], str) or len(cfg["color"]) != 7 or not cfg["color"].startswith("#"):
-        cfg["color"] = DEFAULT_CFG["color"]
-    for k in ("tint_image", "glow", "cursor_sparkle"):
+    for k in ("color", "hold_left_color", "hold_right_color"):
+        if not isinstance(cfg[k], str) or len(cfg[k]) != 7 or not cfg[k].startswith("#"):
+            cfg[k] = DEFAULT_CFG[k]
+    for k in ("tint_image", "glow", "cursor_sparkle", "hold_left", "hold_right"):
         cfg[k] = bool(cfg[k])
     if cfg["image"] and not Path(cfg["image"]).exists():
         alt = APP_DIR / Path(cfg["image"]).name
@@ -542,6 +595,13 @@ TR_EN = {
     "Trùng với phím của: ": "Already used by: ",
     # 1.6.0
     "Đang chỉnh": "Editing", "Mặc định (mọi game)": "Default (all games)",
+    # 1.7.0
+    "Viền khi giữ chuột": "Outline while holding", "Trái": "Left", "Phải": "Right",
+    "Chọn màu viền": "Choose outline color", "Mở thư mục log": "Open log folder",
+    "EzCursor gặp lỗi liên tục nên đã tạm tắt con trỏ để bạn dùng chuột bình thường. "
+    "Hãy mở lại EzCursor; chi tiết lỗi nằm trong file ezcursor.log.":
+        "EzCursor kept hitting errors, so it turned its cursor off to keep your mouse usable. "
+        "Please reopen EzCursor; details are in ezcursor.log.",
     "+ Hồ sơ riêng": "+ Own profile", "✓ Hồ sơ riêng": "✓ Own profile", "Hồ sơ: ": "Profile: ",
     "Xóa hồ sơ riêng \"{n}\"? Game này sẽ dùng lại kiểu Mặc định.":
         "Delete the profile \"{n}\"? This game will go back to the Default style.",
@@ -1261,6 +1321,28 @@ def shell_ui_open():
     return False
 
 
+def outline_width(size):
+    return max(2, round(size / 20))
+
+
+def pad_image(im, hot, p):
+    out = Image.new("RGBA", (im.width + 2 * p, im.height + 2 * p), (0, 0, 0, 0))
+    out.alpha_composite(im, (p, p))
+    return out, (hot[0] + p, hot[1] + p)
+
+
+def add_outline(im, hot, color, w):
+    """Viền màu bám theo hình con trỏ (vẽ bên ngoài, không che con trỏ)."""
+    p = w + 2
+    a = Image.new("L", (im.width + 2 * p, im.height + 2 * p), 0)
+    a.paste(im.getchannel("A").point(lambda v: 255 if v > 90 else 0), (p, p))
+    ring = a.filter(ImageFilter.MaxFilter(2 * w + 1)).filter(ImageFilter.GaussianBlur(0.7))
+    out = Image.new("RGBA", a.size, color)
+    out.putalpha(ring)
+    out.alpha_composite(im, (p, p))
+    return out, (hot[0] + p, hot[1] + p)
+
+
 def add_glow(im, hot, color):
     """Thêm quầng sáng quanh con trỏ, trả về ảnh mới và điểm click mới."""
     size = max(im.size)
@@ -1622,6 +1704,16 @@ class App:
         self.cursor_frames = None
         self.preview_photos = None
         self.cf_idx = 0
+        self.variants = {}          # None / "left" / "right" -> (ảnh, điểm click, màu quầng)
+        self.frame_sets = None      # các bộ khung hình động theo trạng thái giữ chuột
+        self.hold_state = None
+        self.quitting = False
+        self.safe_mode = False
+        self.err_times = []
+        self.logged_errors = set()
+        self.last_move = None
+        self.t_active = self.t_keys = self.t_flags = 0.0
+        self.want_active = False
         self.cf_next = 0.0
         self.cursor_durations = None
         self.pv_idx = 0
@@ -1630,6 +1722,7 @@ class App:
         self.shell_open = False
 
         self.F = Fonts(self.ov)
+        self.ov.report_callback_exception = self.on_tk_error
 
         # Cửa sổ chính
         self.win = ctk.CTkToplevel(self.ov, fg_color=BG)
@@ -1790,6 +1883,10 @@ class App:
                 self.hand_seg.set({v: k for k, v in self.hand_map.items()}.get(c["bibata_hand"]))
             self.fx_color_seg.set({v: k for k, v in self.fx_color_map.items()}.get(c["fx_color"]))
             self.fx_dens_seg.set({v: k for k, v in self.fx_dens_map.items()}.get(c["fx_density"]))
+            for side in ("left", "right"):
+                self.hold_vars[side].set(c[f"hold_{side}"])
+                col = c[f"hold_{side}_color"]
+                self.hold_btns[side].configure(fg_color=col, hover_color=col)
         except (tk.TclError, AttributeError):
             pass
 
@@ -2286,11 +2383,28 @@ class App:
                                                    command=lambda v: self.set_fx("fx_color", self.fx_color_map[v]), **seg_kw)
         self.fx_color_seg.pack(side="right")
         row = ctk.CTkFrame(opt, fg_color="transparent")
-        row.pack(fill="x", padx=16, pady=(6, 12))
+        row.pack(fill="x", padx=16, pady=(6, 6))
         ctk.CTkLabel(row, text=T("Mật độ"), font=self.F.b(13), text_color=TEXT).pack(side="left")
         self.fx_dens_seg = ctk.CTkSegmentedButton(row, values=list(self.fx_dens_map),
                                                   command=lambda v: self.set_fx("fx_density", self.fx_dens_map[v]), **seg_kw)
         self.fx_dens_seg.pack(side="right")
+        row = ctk.CTkFrame(opt, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=(6, 12))
+        ctk.CTkLabel(row, text=T("Viền khi giữ chuột"), font=self.F.b(13), text_color=TEXT).pack(side="left")
+        self.hold_vars, self.hold_btns = {}, {}
+        for side, label in (("right", "Phải"), ("left", "Trái")):     # xếp từ phải sang
+            btn = ctk.CTkButton(row, text="", width=26, height=26, corner_radius=13, border_width=2,
+                                border_color="#FFFFFF", fg_color=self.cfg[f"hold_{side}_color"],
+                                hover_color=self.cfg[f"hold_{side}_color"],
+                                command=lambda sd=side: self.pick_hold_color(sd))
+            btn.pack(side="right", padx=(6, 18 if side == "left" else 0))
+            var = tk.BooleanVar(value=self.cfg[f"hold_{side}"])
+            ctk.CTkCheckBox(row, text=T(label), variable=var, width=10, checkbox_width=20, checkbox_height=20,
+                            corner_radius=6, border_width=1, fg_color=ACCENT, hover_color=ACCENT,
+                            border_color="#4A5266", checkmark_color="#FFFFFF", font=self.F.b(12),
+                            text_color=TEXT, command=lambda sd=side: self.set_hold_opt(sd)).pack(
+                side="right")
+            self.hold_vars[side], self.hold_btns[side] = var, btn
 
         inv = {v: k for k, v in self.fx_color_map.items()}
         self.fx_color_seg.set(inv.get(self.cfg["fx_color"], T("Theo màu con trỏ")))
@@ -2306,6 +2420,20 @@ class App:
         ctk.CTkLabel(test, text=T("   Di chuột và click trong 8 giây để xem hiệu ứng."), font=self.F.b(12),
                      text_color=TEXT2).pack(side="left")
         return page
+
+    def set_hold_opt(self, side):
+        self.cfg[f"hold_{side}"] = bool(self.hold_vars[side].get())
+        self.refresh()
+
+    def pick_hold_color(self, side):
+        res = colorchooser.askcolor(color=self.cfg[f"hold_{side}_color"], parent=self.win, title=T("Chọn màu viền"))
+        if res and res[1]:
+            self.cfg[f"hold_{side}_color"] = res[1]
+            self.hold_btns[side].configure(fg_color=res[1], hover_color=res[1])
+            if not self.cfg[f"hold_{side}"]:          # chọn màu thì bật luôn
+                self.cfg[f"hold_{side}"] = True
+                self.hold_vars[side].set(True)
+            self.refresh()
 
     def set_fx(self, key, value):
         self.cfg[key] = value
@@ -2354,7 +2482,7 @@ class App:
             if want or self.fx.busy():
                 pt = wintypes.POINT()
                 user32.GetCursorPos(ctypes.byref(pt))
-                down = bool(key_down(VK_LBUTTON))
+                down = mouse_buttons()[0]
                 clicked = want and down and not self.fx_prev_click
                 self.fx_prev_click = down
                 pal = self.fx_palette()
@@ -2373,10 +2501,13 @@ class App:
                 self.fxw.show(False)
                 self.fx.last = None
         except tk.TclError:
-            return
+            if self.quitting:
+                return
+            self.report_error("fx", once=True)
         except Exception:
-            pass
-        self.ov.after(16, self.fx_loop)
+            self.report_error("fx", once=True)
+        if not self.quitting:
+            self.ov.after(16, self.fx_loop)
 
     def build_apps_tab(self, parent):
         page = ctk.CTkFrame(parent, fg_color="transparent")
@@ -2463,6 +2594,7 @@ class App:
         self.upd_label = ctk.CTkLabel(t, text="", font=self.F.b(12), text_color=TEXT2, height=18)
         self.upd_label.pack(anchor="w")
         self.cyan_button(r, "Kiểm tra cập nhật", lambda: self.check_update(manual=True)).pack(side="right")
+        self.cyan_button(r, "Mở thư mục log", self.open_log_folder).pack(side="right", padx=(0, 8))
 
         r = ctk.CTkFrame(box, fg_color="transparent")
         r.pack(fill="x", padx=18, pady=(0, 12))
@@ -2680,8 +2812,9 @@ class App:
     def glow_color(self):
         return self.composed[2] if self.composed else self.preview_color()
 
-    def compose_cursor(self):
-        """Ảnh con trỏ hoàn chỉnh dùng cho cả overlay lẫn xem trước: (ảnh, điểm click, màu quầng)."""
+    def compose_cursor(self, outline=None):
+        """Ảnh con trỏ hoàn chỉnh dùng cho cả overlay lẫn xem trước: (ảnh, điểm click, màu quầng).
+        outline: màu viền khi giữ chuột (None = không viền)."""
         c = self.cfg
         s = self.eff_size()
         if own_image(c["shape"]) is not None:
@@ -2702,6 +2835,9 @@ class App:
                 src = tint_image(src, c["color"])
             glow_col = self.preview_color()
             im, hot = render_shape(shape, glow_col, s, src, c["hotspot"], self.src_hot)
+        if c["hold_left"] or c["hold_right"]:      # mọi biến thể cùng kích thước để điểm click không lệch
+            w = outline_width(s)
+            im, hot = add_outline(im, hot, outline, w) if outline else pad_image(im, hot, w + 2)
         if c["glow"]:
             im, hot = add_glow(im, hot, glow_col)
         return im, hot, glow_col
@@ -2718,13 +2854,25 @@ class App:
     def bibata_variant(self):
         return self.cfg["bibata_style"] + ("-right" if self.cfg["bibata_hand"] == "left" else "")
 
+    def hold_colors(self):
+        c = self.cfg
+        out = {None: None}
+        if c["hold_left"]:
+            out["left"] = c["hold_left_color"]
+        if c["hold_right"]:
+            out["right"] = c["hold_right_color"]
+        return out
+
     def rebuild_overlay(self):
         self.composed = self.compose_cursor()
+        self.variants = {k: (self.composed if col is None else self.compose_cursor(col))
+                         for k, col in self.hold_colors().items()}
         im, self.ov_hot, _ = self.composed
         self.cursor_frames = None
+        self.frame_sets = None
         self.cursor_durations = None
         self.preview_photos = None
-        self.ovl.set_image(im)
+        self.ovl.set_image(self.variants.get(self.hold_state, self.composed)[0])
         if getattr(self, "_cf_job", None):
             self.ov.after_cancel(self._cf_job)
             self._cf_job = None
@@ -2739,21 +2887,25 @@ class App:
         if not self.animated_image():
             return
         keep = self.src_img
-        cache, frames, durs = {}, [], []
+        sets, durs = {}, [ms for _, ms in self.src_steps]
         try:
-            for idx, ms in self.src_steps:
-                if idx not in cache:
-                    self.src_img = self.src_frames[idx]
-                    cache[idx] = self.compose_cursor()[0]
-                frames.append(cache[idx])
-                durs.append(ms)
+            for key, col in self.hold_colors().items():
+                cache, frames = {}, []
+                for idx, _ms in self.src_steps:
+                    if idx not in cache:
+                        self.src_img = self.src_frames[idx]
+                        cache[idx] = self.compose_cursor(col)[0]
+                    frames.append(cache[idx])
+                sets[key] = frames
         finally:
             self.src_img = keep
-        if not frames or len({f.size for f in frames}) != 1:
+        frames = sets.get(None)
+        if not frames or len({f.size for fs in sets.values() for f in fs}) != 1:
             return
-        self.cursor_frames, self.cursor_durations = frames, durs
+        self.frame_sets = sets
+        self.cursor_frames, self.cursor_durations = sets.get(self.hold_state, frames), durs
         self.cf_idx, self.cf_next = 0, 0.0
-        self.ovl.set_image(frames[0])
+        self.ovl.set_image(self.cursor_frames[0])
         if self.active:
             self.move_overlay()
         self.pv_idx, self.pv_next = 0, 0.0
@@ -2765,7 +2917,24 @@ class App:
         self._cf_job = None
         if not self.composed:
             return
-        im, hot, gcol = self.composed
+        sets = {}
+        for key, comp in self.variants.items():
+            sets[key], pad = self.sparkle_frames(comp)
+        hot = self.composed[1]
+        self.frame_sets = sets
+        self.cursor_frames = sets.get(self.hold_state, sets[None])
+        self.cursor_durations = [96] * len(self.cursor_frames)
+        self.cf_idx, self.cf_next = 0, 0.0
+        self.pv_idx, self.pv_next = 0, 0.0
+        self.ov_hot = (hot[0] + pad, hot[1] + pad)
+        self.ovl.set_image(self.cursor_frames[0])
+        if self.active:
+            self.move_overlay()
+        self.preview_photos = [ImageTk.PhotoImage(fr, master=self.ov) for fr in sets[None]]
+
+    def sparkle_frames(self, composed):
+        """24 khung hình có ngôi sao nhấp nháy quanh con trỏ; trả về (khung hình, phần lề thêm)."""
+        im, hot, gcol = composed
         s = self.eff_size()
         bb = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox() or (0, 0, im.width, im.height)
         pad = max(8, s // 4)
@@ -2797,15 +2966,19 @@ class App:
                 if 0 <= px and 0 <= py and px + st.width <= W and py + st.height <= H:
                     fr.alpha_composite(st, (px, py))
             frames.append(fr)
-        self.cursor_frames = frames
-        self.cursor_durations = [96] * len(frames)
-        self.cf_idx, self.cf_next = 0, 0.0
-        self.pv_idx, self.pv_next = 0, 0.0
-        self.ov_hot = (hot[0] + pad, hot[1] + pad)
-        self.ovl.set_image(frames[0])
-        if self.active:
-            self.move_overlay()
-        self.preview_photos = [ImageTk.PhotoImage(fr, master=self.ov) for fr in frames]
+        return frames, pad
+
+    def set_hold(self, state):
+        """Đổi ảnh con trỏ khi bắt đầu / thôi giữ chuột (ảnh đã vẽ sẵn nên rất nhẹ)."""
+        if state == self.hold_state:
+            return
+        self.hold_state = state
+        key = state if state in self.variants else None
+        if self.frame_sets:
+            self.cursor_frames = self.frame_sets.get(key) or self.frame_sets[None]
+            self.ovl.set_image(self.cursor_frames[self.cf_idx % len(self.cursor_frames)])
+        elif self.variants:
+            self.ovl.set_image(self.variants.get(key, self.composed)[0])
 
     def update_preview(self):
         c = self.cfg
@@ -3137,9 +3310,13 @@ class App:
             return False
         return True
 
-    def move_overlay(self):
+    def move_overlay(self, only_if_moved=False):
         pt = wintypes.POINT()
         user32.GetCursorPos(ctypes.byref(pt))
+        key = (pt.x, pt.y, self.ov_hot)
+        if only_if_moved and key == self.last_move:
+            return
+        self.last_move = key
         self.ovl.move(pt.x - self.ov_hot[0], pt.y - self.ov_hot[1])
 
     def hide_to_tray(self):
@@ -3534,10 +3711,31 @@ class App:
         return True
 
     def tick(self):
-        if not self.process_queue() or not self.check_hotkeys():
+        """Vòng lặp chính (~4 ms). Lỗi ở đây được ghi log và vòng lặp vẫn chạy tiếp."""
+        if self.quitting:
             return
-        self.tick_count += 1
-        if self.tick_count % 25 == 0:
+        try:
+            if not self.tick_body():
+                return
+        except Exception:
+            if self.quitting:
+                return
+            self.report_error("tick")
+        try:
+            self.ov.after(4, self.tick)
+        except tk.TclError:
+            pass
+
+    def tick_body(self):
+        now = time.perf_counter()
+        if not self.process_queue():
+            return False
+        if now - self.t_keys >= 0.015:              # phím tắt: ~65 lần/giây là đủ
+            self.t_keys = now
+            if not self.check_hotkeys():
+                return False
+        if now - self.t_flags >= 0.1:                # tín hiệu từ bộ cài, đổi màn hình: 10 lần/giây
+            self.t_flags = now
             self.check_monitor()
             for flag, action in ((SHOW_FLAG, self.show_window), (QUIT_FLAG, self.quit)):
                 if flag.exists():
@@ -3547,22 +3745,78 @@ class App:
                         pass
                     action()
                     if flag is QUIT_FLAG:
-                        return
-        was_shell = self.shell_open
-        want = self.compute_active()
-        if want:      # đổi sang hồ sơ của game trước khi hiện con trỏ
-            pr = self.profile_for_exe(self.fg_exe)
-            self.use_style(self.style_of(pr))
-        self.set_active(want)
-        if not self.active:
-            self.use_style(self.style_of(self.edit_profile))
-        if was_shell != self.shell_open:
-            self.update_status()
+                        return False
+        if now - self.t_active >= 0.05:              # game đang mở, menu Start, Fullscreen: 20 lần/giây
+            self.t_active = now
+            was_shell = self.shell_open
+            want = self.compute_active() and not self.safe_mode
+            if want:      # đổi sang hồ sơ của game trước khi hiện con trỏ
+                pr = self.profile_for_exe(self.fg_exe)
+                self.use_style(self.style_of(pr))
+            self.set_active(want)
+            if not self.active:
+                self.use_style(self.style_of(self.edit_profile))
+            if was_shell != self.shell_open:
+                self.update_status()
         if self.active:
-            self.move_overlay()
-        self.ov.after(4, self.tick)
+            l, r = mouse_buttons()
+            c = self.cfg
+            self.set_hold("right" if r and c["hold_right"] else "left" if l and c["hold_left"] else None)
+            self.move_overlay(only_if_moved=True)
+        elif self.hold_state is not None:
+            self.set_hold(None)
+        return True
+
+    # ------------------------------------------------------------ Lỗi & nhật ký
+    def report_error(self, where, once=False):
+        """Ghi lỗi vào log; lỗi lặp lại liên tục ở vòng lặp chính thì tạm tắt con trỏ cho an toàn."""
+        exc = sys.exc_info()[1]
+        key = (where, type(exc).__name__, str(exc)[:200])
+        if once and key in self.logged_errors:
+            return
+        if len(self.logged_errors) < 200:
+            self.logged_errors.add(key)
+            log.error("Lỗi ở %s:\n%s", where, traceback.format_exc())
+        if once:
+            return
+        now = time.perf_counter()
+        self.err_times = [t for t in self.err_times if now - t < 10] + [now]
+        if len(self.err_times) >= 15 and not self.safe_mode:
+            self.enter_safe_mode()
+
+    def on_tk_error(self, exc_type, exc, tb):
+        if self.quitting:
+            return
+        try:
+            raise exc
+        except Exception:
+            self.report_error("giao diện")
+
+    def enter_safe_mode(self):
+        self.safe_mode = True
+        log.critical("Lỗi lặp lại liên tục, tạm tắt con trỏ EzCursor.")
+        emergency_cursor()
+        try:
+            self.active = False
+            self.ovl.show(False)
+            self.fxw.show(False)
+        except Exception:
+            pass
+        try:
+            self.icon.notify(T("EzCursor gặp lỗi liên tục nên đã tạm tắt con trỏ để bạn dùng chuột bình thường. "
+                               "Hãy mở lại EzCursor; chi tiết lỗi nằm trong file ezcursor.log."), APP_NAME)
+        except Exception:
+            pass
+
+    def open_log_folder(self):
+        try:
+            os.startfile(str(APP_DIR))
+        except Exception as e:
+            messagebox.showerror(T("Lỗi"), str(e), parent=self.win)
 
     def quit(self):
+        self.quitting = True
+        log.info("Thoát EzCursor.")
         cleanup()
         self.ovl.destroy()
         self.fxw.destroy()
@@ -3598,8 +3852,25 @@ def main():
         except OSError:
             pass
     migrate_old_version()
+    setup_logging()
     app = App(start_in_tray="--tray" in sys.argv)
     app.ov.mainloop()
+
+
+def setup_logging():
+    """Nhật ký lỗi tại %APPDATA%\\EzCursor\\ezcursor.log (tự xoay vòng, tối đa ~1 MB)."""
+    try:
+        h = logging.handlers.RotatingFileHandler(APP_DIR / "ezcursor.log", maxBytes=512 * 1024, backupCount=1,
+                                                 encoding="utf-8")
+        h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        log.addHandler(h)
+        log.setLevel(logging.INFO)
+        w, hgt = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        log.info("Khởi động EzCursor %s | %s | Python %s | %s | màn hình %sx%s",
+                 APP_VERSION, platform.platform(), platform.python_version(),
+                 "bản cài" if getattr(sys, "frozen", False) else "mã nguồn", w, hgt)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

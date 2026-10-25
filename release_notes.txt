@@ -1,11 +1,13 @@
-✦ Mới trong 1.6.0: Hồ sơ riêng cho từng game
-- Mỗi game có thể có con trỏ, màu, kích thước, ảnh và hiệu ứng riêng; EzCursor tự đổi khi bạn chuyển game
-- Tạo hồ sơ: tab Ứng dụng → bấm "+ Hồ sơ riêng" ở dòng của game
-- Chọn hồ sơ cần chỉnh bằng ô "Đang chỉnh" ở đầu các tab Con trỏ, Bộ sưu tập, Hiệu ứng
-- Game chưa có hồ sơ riêng dùng kiểu Mặc định như trước; phím tắt đổi hình/đổi màu áp dụng cho hồ sơ của game đang chơi
+✦ Mới trong 1.7.0
+- Viền khi giữ chuột: thêm viền màu quanh con trỏ khi giữ chuột trái (di chuyển) hoặc chuột phải (tung kỹ năng). Bật và chọn màu trong tab Hiệu ứng, riêng cho từng hồ sơ game
+- Ổn định hơn: nếu EzCursor gặp lỗi, con trỏ thật luôn được trả lại; lỗi lặp lại liên tục thì EzCursor tự tạm tắt con trỏ thay vì bị treo
+- Nhật ký lỗi: nút "Mở thư mục log" trong tab Tùy chọn, gửi file ezcursor.log khi cần báo lỗi
+- Nhẹ hơn: giảm số lần kiểm tra trong vòng lặp chính, con trỏ chỉ được di chuyển khi chuột thật sự di chuyển
+- Hỗ trợ người dùng đã đổi nút chuột trái/phải trong Windows
 
-✦ New in 1.6.0: Per-game profiles
-- Each game can have its own cursor, color, size, image and effects; EzCursor switches automatically
-- Create one in the Apps tab with "+ Own profile" on the game's row
-- Pick the profile to edit with the "Editing" box at the top of the Cursor, Library and Effects tabs
-- Games without a profile keep using the Default style; shape/color hotkeys change the profile of the game you're playing
+✦ New in 1.7.0
+- Outline while holding: a colored outline around the cursor while holding the left (move) or right (skill) mouse button. Turn it on and pick colors in the Effects tab, per game profile
+- More stable: the real cursor is always restored if EzCursor hits an error; repeated errors make EzCursor turn its cursor off instead of freezing
+- Error log: "Open log folder" button in the Options tab; send ezcursor.log when reporting a bug
+- Lighter: fewer checks in the main loop, and the cursor only moves when the mouse actually moves
+- Supports swapped left/right mouse buttons in Windows

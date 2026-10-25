@@ -19,6 +19,7 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 - Chỉ hiện trong những game / ứng dụng bạn chọn, ra ngoài thì con trỏ trở lại bình thường; có sẵn gợi ý các game ARPG phổ biến
 - Cảnh báo khi game đang chạy Fullscreen độc quyền
 - Hồ sơ riêng cho từng game: mỗi game một con trỏ và hiệu ứng riêng, tự đổi khi chuyển game
+- Viền màu tùy chọn khi giữ chuột trái (di chuyển) hoặc chuột phải (tung kỹ năng)
 - Chạy ngầm dưới khay hệ thống, có thể khởi động cùng Windows
 - Tự kiểm tra và cập nhật phiên bản mới
 - Giao diện tiếng Việt hoặc tiếng Anh (tab **Tùy chọn → Ngôn ngữ**), đổi ngay không cần khởi động lại
@@ -37,6 +38,8 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 | Ctrl + Alt + Q | Thoát |
 
 Có thể đổi phím tắt trong tab **Tùy chọn** (bấm vào ô phím tắt).
+
+**Nếu gặp lỗi:** vào tab **Tùy chọn → Mở thư mục log** và gửi file `ezcursor.log` cho tác giả.
 
 **Nếu con trỏ chuột bị mất:** mở lại EzCursor rồi thoát bằng Ctrl + Alt + Q, hoặc đăng xuất / khởi động lại Windows.
 
