@@ -13,6 +13,7 @@ Vào mục [**Releases**](https://github.com/Columbustrade/EzCursor/releases/lat
 
 - Đổi màu, hình dạng (mũi tên, vòng tròn, dấu thập, chấm, kim cương) và kích thước con trỏ
 - Dùng ảnh PNG của riêng bạn làm con trỏ, có thể tô màu cho ảnh
+- Bộ sưu tập con trỏ **Bibata** với các chủ đề Amber, Classic, Ice hoặc màu tùy chỉnh, kiểu Modern / Original, cho cả người thuận tay trái
 - Chỉ hiện trong những game / ứng dụng bạn chọn, ra ngoài thì con trỏ trở lại bình thường
 - Chạy ngầm dưới khay hệ thống, có thể khởi động cùng Windows
 - Tự kiểm tra và cập nhật phiên bản mới
@@ -52,8 +53,16 @@ Cần Python 3 (64-bit). Đặt các file (kèm thư mục `fonts`) cùng một 
 - Hotkeys: Ctrl+Alt+H toggle, Ctrl+Alt+R next shape, Ctrl+Alt+1..5 colors, Ctrl+Alt+Q quit.
 - EzCursor is an external overlay; it does not modify game files or memory. Use at your own discretion and follow each game's terms of service.
 
-Licensed under the [MIT License](LICENSE).
+EzCursor is licensed under the [GNU General Public License v3.0](LICENSE).
 
 ### Font
 
 EzCursor đi kèm font [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) và [Be Vietnam Pro](https://fonts.google.com/specimen/Be+Vietnam+Pro), phát hành theo giấy phép SIL Open Font License (xem các file `OFL-*.txt` trong thư mục `fonts`).
+
+### Bibata
+
+Bộ sưu tập con trỏ trong EzCursor được tạo từ [Bibata Cursor](https://github.com/ful1e5/Bibata_Cursor) của **Abdulkaiz Khatri**, phát hành theo giấy phép GPL-3.0 (xem `bibata/LICENSE-Bibata.txt`). Ảnh trong thư mục `bibata` được chuyển từ các file SVG gốc của dự án này.
+
+## Giấy phép
+
+Từ phiên bản 1.2.0, EzCursor được phát hành theo giấy phép **GNU GPL v3.0** (xem file `LICENSE`).

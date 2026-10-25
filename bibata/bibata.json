@@ -1,0 +1,218 @@
+{
+ "hotspots": {
+  "modern-right/X_cursor": [
+   128,
+   128
+  ],
+  "modern-right/center_ptr": [
+   127,
+   17
+  ],
+  "modern-right/cross": [
+   128,
+   128
+  ],
+  "modern-right/crosshair": [
+   128,
+   128
+  ],
+  "modern-right/dotbox": [
+   128,
+   128
+  ],
+  "modern-right/grabbing": [
+   112,
+   64
+  ],
+  "modern-right/hand1": [
+   97,
+   80
+  ],
+  "modern-right/hand2": [
+   138,
+   14
+  ],
+  "modern-right/left_ptr": [
+   207,
+   24
+  ],
+  "modern-right/pencil": [
+   46,
+   211
+  ],
+  "modern-right/plus": [
+   128,
+   128
+  ],
+  "modern-right/right_ptr": [
+   55,
+   17
+  ],
+  "modern-right/tcross": [
+   128,
+   128
+  ],
+  "modern/X_cursor": [
+   128,
+   128
+  ],
+  "modern/center_ptr": [
+   127,
+   17
+  ],
+  "modern/cross": [
+   128,
+   128
+  ],
+  "modern/crosshair": [
+   128,
+   128
+  ],
+  "modern/dotbox": [
+   128,
+   128
+  ],
+  "modern/grabbing": [
+   128,
+   66
+  ],
+  "modern/hand1": [
+   144,
+   79
+  ],
+  "modern/hand2": [
+   114,
+   18
+  ],
+  "modern/left_ptr": [
+   55,
+   17
+  ],
+  "modern/pencil": [
+   46,
+   211
+  ],
+  "modern/plus": [
+   128,
+   128
+  ],
+  "modern/right_ptr": [
+   204,
+   17
+  ],
+  "modern/tcross": [
+   128,
+   128
+  ],
+  "original-right/X_cursor": [
+   128,
+   128
+  ],
+  "original-right/center_ptr": [
+   127,
+   17
+  ],
+  "original-right/cross": [
+   128,
+   128
+  ],
+  "original-right/crosshair": [
+   128,
+   128
+  ],
+  "original-right/dotbox": [
+   128,
+   128
+  ],
+  "original-right/grabbing": [
+   112,
+   64
+  ],
+  "original-right/hand1": [
+   97,
+   80
+  ],
+  "original-right/hand2": [
+   138,
+   14
+  ],
+  "original-right/left_ptr": [
+   207,
+   24
+  ],
+  "original-right/pencil": [
+   46,
+   211
+  ],
+  "original-right/plus": [
+   128,
+   128
+  ],
+  "original-right/right_ptr": [
+   55,
+   17
+  ],
+  "original-right/tcross": [
+   128,
+   128
+  ],
+  "original/X_cursor": [
+   128,
+   128
+  ],
+  "original/center_ptr": [
+   127,
+   17
+  ],
+  "original/cross": [
+   128,
+   128
+  ],
+  "original/crosshair": [
+   128,
+   128
+  ],
+  "original/dotbox": [
+   128,
+   128
+  ],
+  "original/grabbing": [
+   128,
+   66
+  ],
+  "original/hand1": [
+   144,
+   79
+  ],
+  "original/hand2": [
+   114,
+   18
+  ],
+  "original/left_ptr": [
+   55,
+   17
+  ],
+  "original/pencil": [
+   46,
+   211
+  ],
+  "original/plus": [
+   128,
+   128
+  ],
+  "original/right_ptr": [
+   204,
+   17
+  ],
+  "original/tcross": [
+   128,
+   128
+  ]
+ },
+ "fixed": [
+  "modern-right/crosshair",
+  "modern/crosshair",
+  "original-right/crosshair",
+  "original/crosshair"
+ ]
+}

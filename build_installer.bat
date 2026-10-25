@@ -3,14 +3,27 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 echo === [1/3] Cai thu vien can thiet ===
-set PY=python
-where python >nul 2>nul || set PY=py
+set "PY="
+py -3.13 --version >nul 2>nul && set "PY=py -3.13"
+if not defined PY (py -3.12 --version >nul 2>nul && set "PY=py -3.12")
+if not defined PY (python --version >nul 2>nul && set "PY=python")
+if not defined PY (py --version >nul 2>nul && set "PY=py")
+if not defined PY (
+    echo *** Khong tim thay Python tren may. ***
+    echo Hay cai Python 3.13 64-bit tai https://www.python.org/downloads/windows/
+    echo Nho tich o "Add python.exe to PATH", cai xong dong cua so nay roi chay lai.
+    start "" "https://www.python.org/downloads/windows/"
+    pause
+    exit /b 1
+)
+echo Dung Python:
+%PY% --version
 %PY% -m pip install --upgrade pillow pystray customtkinter pyinstaller
 if errorlevel 1 goto loi
 
 echo.
 echo === [2/3] Dong goi EzCursor.exe ===
-%PY% -m PyInstaller --noconfirm --onefile --noconsole --hidden-import pystray._win32 --collect-all customtkinter --add-data "fonts;fonts" --add-data "ezcursor.ico;." --icon ezcursor.ico --name EzCursor ezcursor.py
+%PY% -m PyInstaller --noconfirm --onedir --noconsole --hidden-import pystray._win32 --collect-all customtkinter --add-data "fonts;fonts" --add-data "bibata;bibata" --add-data "assets;assets" --add-data "ezcursor.ico;." --add-data "logo.png;." --icon ezcursor.ico --name EzCursor ezcursor.py
 if errorlevel 1 goto loi
 
 echo.

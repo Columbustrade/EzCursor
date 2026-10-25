@@ -13,7 +13,9 @@ import atexit
 import colorsys
 import ctypes
 import json
+import math
 import os
+import random
 import queue
 import shutil
 import subprocess
@@ -31,10 +33,10 @@ from tkinter import colorchooser, filedialog, messagebox
 
 import customtkinter as ctk
 import pystray
-from PIL import Image, ImageDraw, ImageFilter, ImageTk
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageTk
 
 APP_NAME = "EzCursor"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.3.0"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
 GITHUB_REPO = "Columbustrade/EzCursor"
@@ -67,6 +69,8 @@ user32.GetForegroundWindow.restype = wintypes.HWND
 user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
 user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
 user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
 kernel32.OpenProcess.restype = wintypes.HANDLE
 kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -229,22 +233,33 @@ QUIT_FLAG = APP_DIR / "quit.flag"   # bộ cài dùng để yêu cầu thoát
 
 TRANSPARENT = "#010101"
 PRESET_COLORS = ["#ff2828", "#28ff28", "#00c8ff", "#ffe600", "#ff00dc"]
-SHAPES = ["Mũi tên", "Vòng tròn", "Dấu thập", "Chấm tròn", "Kim cương", "Ảnh tải lên"]
+SHAPES = ["EzDrop", "EzPink", "Mũi tên", "Vòng tròn", "Dấu thập", "Chấm tròn", "Kim cương", "Ảnh tải lên", "Bibata"]
 HOTSPOTS = ["Giữa ảnh", "Góc trên trái"]
 ARROW_TIP = 3
 PREVIEW = 170
 
 DEFAULT_CFG = {
     "color": PRESET_COLORS[0],
-    "shape": "Vòng tròn",
+    "shape": "EzDrop",
     "size": 64,
     "image": "",
     "hotspot": HOTSPOTS[0],
     "tint_image": True,
+    "glow": True,
+    "cursor_sparkle": False,
+    "splash": True,
+    "fx_trail": "off",
+    "fx_click": "off",
+    "fx_color": "cursor",
+    "fx_density": "mid",
+    "bibata_cursor": "left_ptr",
+    "bibata_theme": "amber",
+    "bibata_style": "modern",
+    "bibata_hand": "right",
     "hide_real": True,
     "enabled": True,
     "all_apps": False,
-    "apps": ["Last Epoch.exe"],
+    "apps": [],
     "tray_hint_shown": False,
     "auto_check_update": True,
     "last_update_check": 0,
@@ -288,6 +303,20 @@ def load_cfg():
     if cfg["hotspot"] not in HOTSPOTS:
         cfg["hotspot"] = HOTSPOTS[0]
     cfg["size"] = max(24, min(160, int(cfg["size"])))
+    if cfg["bibata_theme"] not in ("amber", "classic", "ice", "custom"):
+        cfg["bibata_theme"] = "amber"
+    if cfg["bibata_style"] not in ("modern", "original"):
+        cfg["bibata_style"] = "modern"
+    if cfg["bibata_hand"] not in ("right", "left"):
+        cfg["bibata_hand"] = "right"
+    if cfg["fx_trail"] not in ("off", "sparkle", "neon", "rainbow", "ghost", "bubble"):
+        cfg["fx_trail"] = "off"
+    if cfg["fx_click"] not in ("off", "ripple", "burst"):
+        cfg["fx_click"] = "off"
+    if cfg["fx_color"] not in ("cursor", "ez"):
+        cfg["fx_color"] = "cursor"
+    if cfg["fx_density"] not in ("low", "mid", "high"):
+        cfg["fx_density"] = "mid"
     if not isinstance(cfg["apps"], list):
         cfg["apps"] = list(DEFAULT_CFG["apps"])
     if cfg["image"] and not Path(cfg["image"]).exists():
@@ -380,6 +409,10 @@ def fetch_latest_release():
 
 
 def make_tray_icon():
+    try:
+        return Image.open(res_path("logo.png")).convert("RGBA").resize((64, 64), Image.LANCZOS)
+    except Exception:
+        pass
     im = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     pts = [(4, 3), (61, 32), (61, 61), (32, 61)]
@@ -463,6 +496,7 @@ def _ss(draw_fn, size, scale=4):
 
 def nav_icon(kind, color, size=20):
     def draw(d, s):
+        s = s * size / 20          # icon thiết kế trên lưới 20 đơn vị
         w = int(2 * s)
         if kind == "cursor":
             d.line([(4 * s, 3 * s), (17 * s, 9.5 * s), (11 * s, 11 * s), (9.5 * s, 17 * s), (4 * s, 3 * s)],
@@ -473,6 +507,15 @@ def nav_icon(kind, color, size=20):
             d.line([(5 * s, 10.5 * s), (9 * s, 10.5 * s)], fill=color, width=w)
             for cx, cy in ((13 * s, 9.5 * s), (14.8 * s, 11.6 * s)):
                 d.ellipse([cx - 1.1 * s, cy - 1.1 * s, cx + 1.1 * s, cy + 1.1 * s], fill=color)
+        elif kind == "fx":
+            c = 10 * s
+            r = 8.5 * s
+            d.polygon([(c + x * r, c + y * r) for x, y in STAR_PTS], outline=color, width=int(1.8 * s))
+            d.ellipse([15 * s, 2 * s, 18.4 * s, 5.4 * s], fill=color)
+        elif kind == "library":
+            for x0, y0 in ((3, 3), (11, 3), (3, 11), (11, 11)):
+                d.rounded_rectangle([x0 * s, y0 * s, (x0 + 6) * s, (y0 + 6) * s], radius=1.6 * s,
+                                    outline=color, width=w)
         else:  # tùy chọn
             d.line([(3 * s, 6 * s), (17 * s, 6 * s)], fill=color, width=w)
             d.line([(3 * s, 14 * s), (17 * s, 14 * s)], fill=color, width=w)
@@ -481,7 +524,27 @@ def nav_icon(kind, color, size=20):
     return _ss(draw, size)
 
 
+_logo_frames = None
+
+
+def logo_frames():
+    """Danh sách khung hình logo động (ảnh vuông) từ assets/logo_anim.png."""
+    global _logo_frames
+    if _logo_frames is None:
+        try:
+            sheet = Image.open(res_path("assets", "logo_anim.png")).convert("RGBA")
+            f = sheet.height
+            _logo_frames = [sheet.crop((i * f, 0, (i + 1) * f, f)) for i in range(sheet.width // f)]
+        except Exception:
+            _logo_frames = []
+    return _logo_frames
+
+
 def logo_image(size=26):
+    try:
+        return Image.open(res_path("logo.png")).convert("RGBA").resize((size, size), Image.LANCZOS)
+    except Exception:
+        pass
     def draw(d, s):
         pts = [(2 * s, 1.5 * s), (24 * s, 13 * s), (24 * s, 24 * s), (13 * s, 24 * s)]
         d.polygon(pts, fill=ACCENT)
@@ -491,6 +554,7 @@ def logo_image(size=26):
 
 def simple_icon(kind, color, size=16):
     def draw(d, s):
+        s = s * size / 16          # icon thiết kế trên lưới 16 đơn vị
         w = int(2 * s)
         if kind == "upload":
             d.line([(8 * s, 11 * s), (8 * s, 2.5 * s)], fill=color, width=w)
@@ -506,8 +570,8 @@ def simple_icon(kind, color, size=16):
     return _ss(draw, size)
 
 
-def render_preview(shape, color, size, img_rgba, hotspot):
-    """Vẽ con trỏ cho khung xem trước, có quầng sáng (glow)."""
+def render_shape(shape, color, size, img_rgba, hotspot):
+    """Vẽ con trỏ (khử răng cưa), trả về (ảnh RGBA, điểm click)."""
     S = 4
     n = size * S
     im = Image.new("RGBA", (n, n), (0, 0, 0, 0))
@@ -548,9 +612,261 @@ def render_preview(shape, color, size, img_rgba, hotspot):
         pos = (0, 0) if hotspot == "Góc trên trái" else ((n - pic.width) // 2, (n - pic.height) // 2)
         im.alpha_composite(pic, pos)
     im = im.resize((size, size), Image.LANCZOS)
+    if shape == "Mũi tên":
+        hot = (round(3 * size / 64), round(3 * size / 64))
+    elif shape == "Ảnh tải lên" and hotspot == "Góc trên trái":
+        hot = (0, 0)
+    else:
+        hot = (size // 2, size // 2)
+    return im, hot
 
-    pad = max(12, size // 3)
-    out = Image.new("RGBA", (size + 2 * pad, size + 2 * pad), (0, 0, 0, 0))
+
+# ---------------------------------------------------------------- Bộ con trỏ Bibata
+BIBATA_THEMES = {
+    "amber": ("Amber", "#FF8300", "#FFFFFF", "#001524"),
+    "classic": ("Classic", "#000000", "#FFFFFF", "#000000"),
+    "ice": ("Ice", "#FFFFFF", "#000000", "#FFFFFF"),
+}
+BIBATA_CURSORS = [
+    ("left_ptr", "Mũi tên"), ("right_ptr", "Mũi tên ngược"), ("center_ptr", "Mũi tên đứng"),
+    ("hand2", "Bàn tay chỉ"), ("hand1", "Bàn tay mở"), ("grabbing", "Nắm tay"),
+    ("crosshair", "Tâm ngắm"), ("cross", "Dấu thập"), ("tcross", "Thập mảnh"),
+    ("plus", "Dấu cộng"), ("dotbox", "Ô chấm"), ("X_cursor", "Dấu X"), ("pencil", "Bút chì"),
+]
+
+
+def _rgb(c):
+    return tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def luminance(c):
+    r, g, b = _rgb(c)
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def bibata_colors(theme, custom_color):
+    if theme in BIBATA_THEMES:
+        return BIBATA_THEMES[theme][1:]
+    outline = "#000000" if luminance(custom_color) > 170 else "#FFFFFF"
+    return custom_color, outline, "#001524" if outline == "#FFFFFF" else "#FFFFFF"
+
+
+_bib_cache = {}
+
+
+def bibata_image(base_dir, variant, name, colors):
+    """Ảnh con trỏ Bibata 256px đã tô màu (thân, viền, phụ)."""
+    key = (variant, name, colors)
+    if key in _bib_cache:
+        return _bib_cache[key]
+    src = Image.open(base_dir / variant / f"{name}.png").convert("RGBA")
+    r, g, b, a = src.split()
+    base, outline, accent = (_rgb(c) for c in colors)
+    chans = []
+    for k in range(3):
+        layer = ImageChops.add(ImageChops.add(g.point(lambda v, f=base[k]: v * f // 255),
+                                              b.point(lambda v, f=outline[k]: v * f // 255)),
+                               r.point(lambda v, f=accent[k]: v * f // 255))
+        chans.append(layer)
+    out = Image.merge("RGBA", (*chans, a))
+    fixed = base_dir / variant / f"{name}.fixed.png"
+    if fixed.exists():
+        out.alpha_composite(Image.open(fixed).convert("RGBA"))
+    if len(_bib_cache) > 64:
+        _bib_cache.clear()
+    _bib_cache[key] = out
+    return out
+
+
+BIBATA_DIR = res_path("bibata")
+# Con trỏ riêng của EzCursor: (mã hình, tên hiển thị, file ảnh 256 px, điểm click, màu quầng sáng)
+OWN_CURSORS = [
+    ("EzDrop", "Liquid Drop", "ezdrop.png", (21, 20), "#FF2E93"),
+    ("EzPink", "Mảnh hồng", "ezpink.png", (25,21), "#FF2E93"),
+]
+OWN_BY_ID = {c[0]: c for c in OWN_CURSORS}
+_own_imgs = {}
+
+
+def own_image(shape):
+    if shape not in OWN_BY_ID:
+        return None
+    if shape not in _own_imgs:
+        try:
+            _own_imgs[shape] = Image.open(res_path("assets", OWN_BY_ID[shape][2])).convert("RGBA")
+        except Exception:
+            _own_imgs[shape] = None
+    return _own_imgs[shape]
+
+
+def ezdrop_image():
+    return own_image("EzDrop")
+try:
+    BIBATA_META = json.loads((BIBATA_DIR / "bibata.json").read_text(encoding="utf-8"))
+except Exception:
+    BIBATA_META = {"hotspots": {}}
+
+
+# ---------------------------------------------------------------- Overlay trong suốt từng điểm ảnh
+gdi32 = ctypes.windll.gdi32
+LRESULT = ctypes.c_ssize_t
+WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+
+
+class WNDCLASSEXW(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("style", wintypes.UINT), ("lpfnWndProc", WNDPROC),
+                ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int), ("hInstance", wintypes.HINSTANCE),
+                ("hIcon", wintypes.HANDLE), ("hCursor", wintypes.HANDLE), ("hbrBackground", wintypes.HANDLE),
+                ("lpszMenuName", wintypes.LPCWSTR), ("lpszClassName", wintypes.LPCWSTR), ("hIconSm", wintypes.HANDLE)]
+
+
+class BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG),
+                ("biPlanes", wintypes.WORD), ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
+                ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG), ("biYPelsPerMeter", wintypes.LONG),
+                ("biClrUsed", wintypes.DWORD), ("biClrImportant", wintypes.DWORD)]
+
+
+class BLENDFUNCTION(ctypes.Structure):
+    _fields_ = [("BlendOp", ctypes.c_ubyte), ("BlendFlags", ctypes.c_ubyte),
+                ("SourceConstantAlpha", ctypes.c_ubyte), ("AlphaFormat", ctypes.c_ubyte)]
+
+
+user32.DefWindowProcW.restype = LRESULT
+user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.RegisterClassExW.argtypes = [ctypes.POINTER(WNDCLASSEXW)]
+user32.CreateWindowExW.restype = wintypes.HWND
+user32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                   wintypes.HWND, wintypes.HANDLE, wintypes.HINSTANCE, ctypes.c_void_p]
+user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.DestroyWindow.argtypes = [wintypes.HWND]
+user32.GetDC.restype = wintypes.HDC
+user32.GetDC.argtypes = [wintypes.HWND]
+user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+user32.UpdateLayeredWindow.argtypes = [wintypes.HWND, wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                                       ctypes.POINTER(wintypes.SIZE), wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                                       wintypes.DWORD, ctypes.POINTER(BLENDFUNCTION), wintypes.DWORD]
+user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+gdi32.CreateCompatibleDC.restype = wintypes.HDC
+gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+gdi32.CreateDIBSection.restype = wintypes.HANDLE
+gdi32.CreateDIBSection.argtypes = [wintypes.HDC, ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(ctypes.c_void_p),
+                                   wintypes.HANDLE, wintypes.DWORD]
+gdi32.SelectObject.restype = wintypes.HANDLE
+gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HANDLE]
+gdi32.DeleteObject.argtypes = [wintypes.HANDLE]
+gdi32.DeleteDC.argtypes = [wintypes.HDC]
+kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+
+
+@WNDPROC
+def _overlay_wndproc(hwnd, msg, wparam, lparam):
+    return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+
+class LayeredOverlay:
+    """Cửa sổ con trỏ: trong suốt từng điểm ảnh, click xuyên qua, luôn trên cùng."""
+
+    def __init__(self):
+        hinst = kernel32.GetModuleHandleW(None)
+        wc = WNDCLASSEXW()
+        wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+        wc.lpfnWndProc = _overlay_wndproc
+        wc.hInstance = hinst
+        wc.lpszClassName = "EzCursorOverlay"
+        user32.RegisterClassExW(ctypes.byref(wc))
+        ex = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | 0x8  # WS_EX_TOPMOST
+        self.hwnd = user32.CreateWindowExW(ex, "EzCursorOverlay", "EzCursor Overlay", 0x80000000,
+                                           0, 0, 1, 1, None, None, hinst, None)
+        self.visible = False
+
+    def set_image(self, im, pos=None):
+        w, h = im.size
+        r, g, b, a = im.convert("RGBa").split()          # RGBa = đã nhân alpha sẵn
+        data = Image.merge("RGBA", (b, g, r, a)).tobytes()
+        screen = user32.GetDC(None)
+        mem = gdi32.CreateCompatibleDC(screen)
+        bmi = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
+        bits = ctypes.c_void_p()
+        hbmp = gdi32.CreateDIBSection(mem, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
+        ctypes.memmove(bits, data, len(data))
+        old = gdi32.SelectObject(mem, hbmp)
+        size = wintypes.SIZE(w, h)
+        src = wintypes.POINT(0, 0)
+        blend = BLENDFUNCTION(0, 0, 255, 1)
+        dst = ctypes.byref(wintypes.POINT(int(pos[0]), int(pos[1]))) if pos else None
+        user32.UpdateLayeredWindow(self.hwnd, screen, dst, ctypes.byref(size), mem, ctypes.byref(src),
+                                   0, ctypes.byref(blend), 2)
+        gdi32.SelectObject(mem, old)
+        gdi32.DeleteObject(hbmp)
+        gdi32.DeleteDC(mem)
+        user32.ReleaseDC(None, screen)
+
+    def move(self, x, y):
+        user32.SetWindowPos(self.hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
+
+    def show(self, on):
+        if on != self.visible:
+            user32.ShowWindow(self.hwnd, 4 if on else 0)    # SW_SHOWNOACTIVATE / SW_HIDE
+            self.visible = on
+
+    def destroy(self):
+        try:
+            user32.DestroyWindow(self.hwnd)
+        except Exception:
+            pass
+
+
+# Các bảng giao diện của Windows nằm trên lớp "luôn trên cùng" -> tạm hiện con trỏ thật
+SHELL_UI_EXES = {"startmenuexperiencehost.exe", "searchhost.exe", "searchapp.exe", "searchui.exe",
+                 "shellexperiencehost.exe", "lockapp.exe"}
+SHELL_UI_CLASSES = {"XamlExplorerHostIslandWindow", "MultitaskingViewFrame", "TaskSwitcherWnd",
+                    "ForegroundStaging", "Windows.UI.Core.CoreWindow"}
+
+
+user32.WindowFromPoint.restype = wintypes.HWND
+user32.WindowFromPoint.argtypes = [wintypes.POINT]
+user32.GetAncestor.restype = wintypes.HWND
+user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+# Cửa sổ của explorer.exe dưới con trỏ vẫn dùng con trỏ tùy chỉnh nếu là desktop hoặc thư mục
+SHELL_HOVER_OK = {"Progman", "WorkerW", "CabinetWClass", "ExploreWClass", "EzCursorOverlay"}
+
+
+def class_name(h):
+    buf = ctypes.create_unicode_buffer(128)
+    user32.GetClassNameW(h, buf, 128)
+    return buf.value
+
+
+def shell_ui_open():
+    """True khi giao diện riêng của Windows (Start, Search, taskbar, xem trước...) đang mở hoặc ở dưới chuột."""
+    h = user32.GetForegroundWindow()
+    if h:
+        exe = exe_name(pid_of(h)).lower()
+        if exe in SHELL_UI_EXES:
+            return True
+        if exe in ("explorer.exe", "") and class_name(h) in SHELL_UI_CLASSES:
+            return True
+    # Cửa sổ ngay dưới con trỏ: khung xem trước taskbar, khay hệ thống, thông báo... không lấy focus
+    pt = wintypes.POINT()
+    user32.GetCursorPos(ctypes.byref(pt))
+    under = user32.WindowFromPoint(pt)
+    if under:
+        root = user32.GetAncestor(under, 2) or under          # GA_ROOT
+        if class_name(root) not in SHELL_HOVER_OK:
+            exe = exe_name(pid_of(root)).lower()
+            if exe in SHELL_UI_EXES or exe == "explorer.exe":
+                return True
+    return False
+
+
+def add_glow(im, hot, color):
+    """Thêm quầng sáng quanh con trỏ, trả về ảnh mới và điểm click mới."""
+    size = max(im.size)
+    pad = max(10, size // 3)
+    out = Image.new("RGBA", (im.width + 2 * pad, im.height + 2 * pad), (0, 0, 0, 0))
     alpha = Image.new("L", out.size, 0)
     alpha.paste(im.getchannel("A"), (pad, pad))
     alpha = alpha.filter(ImageFilter.GaussianBlur(max(4, size / 9))).point(lambda v: int(v * 0.85))
@@ -558,7 +874,301 @@ def render_preview(shape, color, size, img_rgba, hotspot):
     glow.putalpha(alpha)
     out.alpha_composite(glow)
     out.alpha_composite(im, (pad, pad))
-    return out
+    return out, (hot[0] + pad, hot[1] + pad)
+
+
+# ---------------------------------------------------------------- Hiệu ứng theo con trỏ
+FX_TRAILS = [("off", "Tắt"), ("sparkle", "Lấp lánh"), ("neon", "Vệt neon"),
+             ("rainbow", "Cầu vồng"), ("ghost", "Bóng mờ"), ("bubble", "Bong bóng")]
+FX_CLICKS = [("off", "Tắt"), ("ripple", "Gợn sóng"), ("burst", "Pháo hoa")]
+EZ_COLORS = ["#2EE59D", "#2F80FF", "#FF2E93"]
+FX_DENSITY = {"low": 0.5, "mid": 1.0, "high": 2.0}
+FX_BOX = 600          # kích thước tối đa của lớp hiệu ứng quanh con trỏ
+VK_LBUTTON = 0x01
+STAR_PTS = [(0, -1), (0.14, -0.29), (0.29, -0.14), (1, 0), (0.29, 0.14), (0.14, 0.29),
+            (0, 1), (-0.14, 0.29), (-0.29, 0.14), (-1, 0), (-0.29, -0.14), (-0.14, -0.29)]
+
+
+def hue_color(h):
+    r, g, b = colorsys.hsv_to_rgb(h % 1.0, 0.75, 1.0)
+    return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+
+
+def star_sprite(color, size):
+    S = 4
+    n = size * S
+    im = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    c = n / 2
+    r = n * 0.36
+    d.polygon([(c + x * r, c + y * r) for x, y in STAR_PTS], fill=color)
+    d.ellipse([c - r * 0.12, c - r * 0.12, c + r * 0.12, c + r * 0.12], fill="#FFFFFF")
+    im = im.resize((size, size), Image.LANCZOS)
+    glow = Image.new("RGBA", im.size, color)
+    glow.putalpha(im.getchannel("A").filter(ImageFilter.GaussianBlur(size / 7)).point(lambda v: int(v * 0.8)))
+    glow.alpha_composite(im)
+    return glow
+
+
+def soft_dot(color, size, hard=0.45):
+    S = 4
+    n = size * S
+    im = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    c = n / 2
+    d.ellipse([c - n * 0.22, c - n * 0.22, c + n * 0.22, c + n * 0.22], fill=color)
+    im = im.filter(ImageFilter.GaussianBlur(n * 0.08))
+    core = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    ImageDraw.Draw(core).ellipse([c - n * 0.22 * hard, c - n * 0.22 * hard, c + n * 0.22 * hard, c + n * 0.22 * hard],
+                                 fill=mix(color, "#FFFFFF", 0.55))
+    im.alpha_composite(core.filter(ImageFilter.GaussianBlur(n * 0.03)))
+    return im.resize((size, size), Image.LANCZOS)
+
+
+def bubble_sprite(color, size):
+    S = 4
+    n = size * S
+    im = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    w = max(2, n // 12)
+    d.ellipse([w, w, n - w, n - w], outline=color, width=w)
+    d.ellipse([n * 0.28, n * 0.24, n * 0.42, n * 0.38], fill="#FFFFFF")
+    return im.resize((size, size), Image.LANCZOS)
+
+
+class FxEngine:
+    """Hệ hạt cho hiệu ứng vệt chuột và click, vẽ ra một ảnh RGBA quanh con trỏ."""
+
+    def __init__(self):
+        self.parts = []      # [x, y, vx, vy, age, life, sprite_key, gravity]
+        self.trail = []      # [(x, y, t)]
+        self.ghosts = []     # [(x, y, t)]
+        self.rings = []      # [x, y, age, color]
+        self.cache = {}
+        self.last = None
+        self.dist = 0.0
+        self.hue = 0.0
+        self.last_ghost = 0.0
+        self.ghost_img = None
+
+    def sprite(self, kind, color, size):
+        key = (kind, color, size)
+        im = self.cache.get(key)
+        if im is None:
+            if len(self.cache) > 400:
+                self.cache.clear()
+            im = {"star": star_sprite, "dot": soft_dot, "bubble": bubble_sprite}[kind](color, size)
+            self.cache[key] = im
+        return im
+
+    def faded(self, key, im, alpha):
+        q = max(0, min(8, round(alpha * 8)))
+        if q == 0:
+            return None
+        if q == 8:
+            return im
+        k = ("fade", key, q)
+        out = self.cache.get(k)
+        if out is None:
+            out = im.copy()
+            out.putalpha(im.getchannel("A").point(lambda v, f=q / 8: int(v * f)))
+            self.cache[k] = out
+        return out
+
+    def busy(self):
+        return bool(self.parts or self.trail or self.ghosts or self.rings)
+
+    def clear(self):
+        self.parts.clear(); self.trail.clear(); self.ghosts.clear(); self.rings.clear()
+        self.last = None
+
+    def update(self, now, dt, pos, clicked, cfg, palette, ghost_img):
+        trail = cfg["fx_trail"]
+        dens = FX_DENSITY.get(cfg["fx_density"], 1.0)
+        x, y = pos
+        moved = 0.0
+        if self.last is not None:
+            moved = math.hypot(x - self.last[0], y - self.last[1])
+        self.last = pos
+        if moved > 400:          # nhảy chuột quá xa (đổi màn hình...) -> bỏ qua
+            moved = 0
+            self.trail.clear()
+        self.dist += moved
+        self.hue = (self.hue + dt * 0.6) % 1.0
+
+        if trail in ("sparkle", "bubble"):
+            step = (14 if trail == "sparkle" else 22) / dens
+            while self.dist >= step:
+                self.dist -= step
+                col = random.choice(palette)
+                if trail == "sparkle":
+                    size = random.choice((14, 18, 22, 26))
+                    self.parts.append([x + random.uniform(-8, 8), y + random.uniform(-8, 8),
+                                       random.uniform(-25, 25), random.uniform(5, 40), 0.0,
+                                       random.uniform(0.45, 0.8), ("star", col, size), 0.0])
+                else:
+                    size = random.choice((10, 14, 18))
+                    self.parts.append([x + random.uniform(-6, 6), y + random.uniform(-4, 4),
+                                       random.uniform(-15, 15), random.uniform(-70, -35), 0.0,
+                                       random.uniform(0.7, 1.1), ("bubble", col, size), 0.0])
+        else:
+            self.dist = 0.0
+        if trail in ("neon", "rainbow"):
+            if moved > 0.5 or not self.trail:
+                self.trail.append((x, y, now))
+        if trail == "ghost" and ghost_img is not None:
+            self.ghost_img = ghost_img
+            if moved > 2 and now - self.last_ghost > 0.03:
+                self.ghosts.append((x, y, now))
+                self.last_ghost = now
+        life_trail = 0.32 * (0.8 + 0.2 * dens)
+        self.trail = [p for p in self.trail if now - p[2] < life_trail][-80:]
+        self.ghosts = [p for p in self.ghosts if now - p[2] < 0.22][-8:]
+
+        if clicked:
+            if cfg["fx_click"] == "ripple":
+                self.rings.append([x, y, 0.0, random.choice(palette)])
+            elif cfg["fx_click"] == "burst":
+                n = int(14 * (0.7 + 0.3 * dens))
+                for i in range(n):
+                    a = 2 * math.pi * i / n + random.uniform(-0.2, 0.2)
+                    sp = random.uniform(140, 300)
+                    self.parts.append([x, y, math.cos(a) * sp, math.sin(a) * sp, 0.0,
+                                       random.uniform(0.5, 0.8), ("dot", random.choice(palette), 16), 420.0])
+
+        alive = []
+        for p in self.parts:
+            p[4] += dt
+            if p[4] < p[5]:
+                p[0] += p[2] * dt
+                p[1] += p[3] * dt
+                p[3] += p[7] * dt
+                alive.append(p)
+        self.parts = alive
+        for r in self.rings:
+            r[2] += dt
+        self.rings = [r for r in self.rings if r[2] < 0.5]
+
+    def render(self, now, cursor, cfg, palette, ghost_hot):
+        cx, cy = cursor
+        half = FX_BOX // 2
+        left, top = int(cx - half), int(cy - half)
+        items = []          # (ảnh, x, y)
+        for p in self.parts:
+            im = self.sprite(*p[6])
+            t = p[4] / p[5]
+            if p[6][0] == "star":
+                a = math.sin(min(1.0, t) * math.pi) ** 0.7
+            else:
+                a = 1.0 - t
+            f = self.faded(p[6], im, a)
+            if f is not None:
+                items.append((f, p[0] - im.width / 2, p[1] - im.height / 2))
+        if self.trail:
+            pts = self.trail
+            stamps = []
+            for i in range(1, len(pts)):
+                (x0, y0, _), (x1, y1, t1) = pts[i - 1], pts[i]
+                seg = math.hypot(x1 - x0, y1 - y0)
+                k = max(1, int(seg / 4))
+                for j in range(k):
+                    u = j / k
+                    stamps.append((x0 + (x1 - x0) * u, y0 + (y1 - y0) * u, t1))
+            stamps.append((pts[-1][0], pts[-1][1], pts[-1][2]))
+            n = len(stamps)
+            for i, (sx, sy, st) in enumerate(stamps):
+                frac = (i + 1) / n
+                size = 8 + 4 * round(frac * 5)                 # 8..28 px, lượng tử hóa để dùng cache
+                if cfg["fx_trail"] == "rainbow":
+                    col = hue_color(round((self.hue + frac * 0.6) * 24) / 24)
+                else:
+                    col = palette[min(len(palette) - 1, int(frac * len(palette)))]
+                im = self.sprite("dot", col, size)
+                f = self.faded(("dot", col, size), im, 0.25 + 0.75 * frac)
+                if f is not None:
+                    items.append((f, sx - size / 2, sy - size / 2))
+        if self.ghosts and self.ghost_img is not None:
+            gi = self.ghost_img
+            for (gx, gy, gt) in self.ghosts:
+                a = 0.45 * (1 - (now - gt) / 0.22)
+                f = self.faded(("ghost", id(gi)), gi, a)
+                if f is not None:
+                    items.append((f, gx - ghost_hot[0], gy - ghost_hot[1]))
+
+        box = Image.new("RGBA", (FX_BOX, FX_BOX), (0, 0, 0, 0))
+        drawn = False
+        if self.rings:
+            d = ImageDraw.Draw(box)
+            for x, y, age, col in self.rings:
+                t = age / 0.5
+                r = 10 + 60 * (1 - (1 - t) ** 3)
+                c = mix(col, "#000000", 0)
+                rgb = tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
+                alpha = int(255 * (1 - t))
+                bx, by = x - left, y - top
+                if r < bx < FX_BOX - r and r < by < FX_BOX - r:
+                    d.ellipse([bx - r, by - r, bx + r, by + r], outline=rgb + (alpha,), width=4)
+                    r2 = r * 0.6
+                    d.ellipse([bx - r2, by - r2, bx + r2, by + r2], outline=(255, 255, 255, alpha // 2), width=2)
+                    drawn = True
+        for im, x, y in items:
+            ix, iy = int(x - left), int(y - top)
+            if 0 <= ix and 0 <= iy and ix + im.width <= FX_BOX and iy + im.height <= FX_BOX:
+                box.alpha_composite(im, (ix, iy))
+                drawn = True
+        if not drawn:
+            return None, (left, top)
+        bb = box.getbbox()
+        if bb is None:
+            return None, (left, top)
+        return box.crop(bb), (left + bb[0], top + bb[1])
+
+
+def fx_icon(kind, size=48):
+    """Ảnh minh họa nhỏ cho các ô chọn hiệu ứng."""
+    S = 4
+    n = size * S
+    im = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    G_, B_, P_ = EZ_COLORS
+    if kind == "aura":
+        base = [(0, 0), (0, 0.5), (0.13, 0.38), (0.22, 0.58), (0.3, 0.54), (0.21, 0.35), (0.38, 0.35)]
+        d.polygon([(n * (0.2 + x), n * (0.28 + y)) for x, y in base], fill=P_)
+        for (cx, cy, r, col) in ((0.7, 0.24, 0.13, "#FFFFFF"), (0.8, 0.52, 0.08, G_), (0.18, 0.84, 0.07, B_)):
+            d.polygon([(n * cx + x * n * r, n * cy + y * n * r) for x, y in STAR_PTS], fill=col)
+    elif kind == "off":
+        w = int(3 * S)
+        d.ellipse([n * 0.22, n * 0.22, n * 0.78, n * 0.78], outline="#8B93A7", width=w)
+        d.line([(n * 0.32, n * 0.68), (n * 0.68, n * 0.32)], fill="#8B93A7", width=w)
+    elif kind == "sparkle":
+        for (cx, cy, r, col) in ((0.32, 0.36, 0.2, "#FFFFFF"), (0.66, 0.6, 0.15, P_), (0.66, 0.24, 0.09, G_), (0.3, 0.74, 0.08, B_)):
+            d.polygon([(n * cx + x * n * r, n * cy + y * n * r) for x, y in STAR_PTS], fill=col)
+    elif kind in ("neon", "rainbow"):
+        pts = [(0.15 + 0.7 * i / 30, 0.62 - 0.28 * math.sin(i / 30 * math.pi * 1.4)) for i in range(31)]
+        for i, (x, y) in enumerate(pts):
+            f = i / 30
+            col = hue_color(f * 0.8) if kind == "rainbow" else [G_, B_, P_][min(2, int(f * 3))]
+            r = n * (0.02 + 0.05 * f)
+            d.ellipse([n * x - r, n * y - r, n * x + r, n * y + r], fill=col)
+    elif kind == "ghost":
+        base = [(0, 0), (0, 0.5), (0.13, 0.38), (0.22, 0.58), (0.3, 0.54), (0.21, 0.35), (0.38, 0.35)]
+        for k, (ox, a) in enumerate(((0.1, 70), (0.25, 140), (0.42, 255))):
+            col = tuple(int(P_[i:i + 2], 16) for i in (1, 3, 5)) + (a,)
+            d.polygon([(n * (ox + x), n * (0.22 + y)) for x, y in base], fill=col)
+    elif kind == "bubble":
+        for (cx, cy, r, col) in ((0.36, 0.62, 0.17, B_), (0.64, 0.38, 0.12, P_), (0.4, 0.26, 0.07, G_)):
+            d.ellipse([n * (cx - r), n * (cy - r), n * (cx + r), n * (cy + r)], outline=col, width=int(2.5 * S))
+    elif kind == "ripple":
+        for r, col in ((0.12, "#FFFFFF"), (0.24, B_), (0.36, P_)):
+            d.ellipse([n * (0.5 - r), n * (0.5 - r), n * (0.5 + r), n * (0.5 + r)], outline=col, width=int(2.5 * S))
+    elif kind == "burst":
+        for i in range(10):
+            a = 2 * math.pi * i / 10
+            col = EZ_COLORS[i % 3]
+            x0, y0 = n * (0.5 + math.cos(a) * 0.12), n * (0.5 + math.sin(a) * 0.12)
+            x1, y1 = n * (0.5 + math.cos(a) * 0.36), n * (0.5 + math.sin(a) * 0.36)
+            d.line([(x0, y0), (x1, y1)], fill=col, width=int(3 * S))
+    return im.resize((size, size), Image.LANCZOS)
 
 
 # ---------------------------------------------------------------- Ứng dụng
@@ -585,21 +1195,22 @@ class App:
         load_fonts()
         ctk.set_appearance_mode("dark")
 
-        # Overlay (trong suốt, click xuyên qua, luôn trên cùng)
+        # Tk gốc (ẩn) và overlay con trỏ trong suốt từng điểm ảnh
         self.ov = tk.Tk()
-        self.ov.overrideredirect(True)
-        self.ov.attributes("-topmost", True)
-        self.ov.attributes("-transparentcolor", TRANSPARENT)
-        self.ov.config(bg=TRANSPARENT)
-        s = self.cfg["size"]
-        self.ov.geometry(f"{s}x{s}+0+0")
-        self.cv = tk.Canvas(self.ov, width=s, height=s, bg=TRANSPARENT, highlightthickness=0)
-        self.cv.pack()
-        self.ov.update_idletasks()
-        self.hwnd = user32.GetParent(self.ov.winfo_id())
-        st = user32.GetWindowLongW(self.hwnd, GWL_EXSTYLE)
-        user32.SetWindowLongW(self.hwnd, GWL_EXSTYLE, st | WS_EX_LAYERED | WS_EX_TRANSPARENT
-                              | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+        self.ov.withdraw()
+        self.fxw = LayeredOverlay()      # lớp hiệu ứng, tạo trước để nằm dưới con trỏ
+        self.ovl = LayeredOverlay()
+        self.fx = FxEngine()
+        self.fx_test_until = 0.0
+        self.fx_prev_click = False
+        self.fx_t = time.perf_counter()
+        self.ov_hot = (0, 0)
+        self.composed = None
+        self.cursor_frames = None
+        self.preview_photos = None
+        self.cf_idx = 0
+        self._cf_job = None
+        self.shell_open = False
 
         self.F = Fonts(self.ov)
 
@@ -611,7 +1222,13 @@ class App:
         self.win.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
         ico = res_path("ezcursor.ico")
         if ico.exists():
+            try:
+                self.ov.iconbitmap(default=str(ico))      # icon mặc định cho mọi cửa sổ của app
+            except Exception:
+                pass
             self.win.after(260, lambda: self.win.iconbitmap(str(ico)))
+        self.win.after(320, self.apply_window_icon)
+        self.win.after(350, self.fix_window_style)
         try:
             self.sc = self.win._get_window_scaling()
         except Exception:
@@ -621,9 +1238,15 @@ class App:
             self.load_image(self.cfg["image"], silent=True)
 
         self.build_ui()
+        self.splashing = False
         if start_in_tray:
             self.win.withdraw()
             self.win.after(300, self.win.withdraw)
+        elif self.cfg["splash"] and logo_frames():
+            self.splashing = True
+            self.win.withdraw()
+            self.win.after(300, lambda: self.win.withdraw() if self.splashing else None)
+            self.ov.after(30, self.show_splash)
 
         menu = pystray.Menu(
             pystray.MenuItem("Mở EzCursor", lambda i, it: self.q.put("show"), default=True),
@@ -640,6 +1263,7 @@ class App:
         self.refresh()
         self.tick()
         self.anim()
+        self.fx_loop()
         self.ov.after(5000, self.auto_check_update)
 
     # ------------------------------------------------------------ Tiện ích giao diện
@@ -677,6 +1301,8 @@ class App:
         self.content.grid_rowconfigure(0, weight=1)
         self.pages = {
             "cursor": self.build_cursor_tab(self.content),
+            "library": self.build_library_tab(self.content),
+            "fx": self.build_fx_tab(self.content),
             "apps": self.build_apps_tab(self.content),
             "opts": self.build_options_tab(self.content),
         }
@@ -692,7 +1318,10 @@ class App:
 
         logo = ctk.CTkFrame(sb, fg_color="transparent")
         logo.pack(fill="x", padx=18, pady=(20, 18))
-        ctk.CTkLabel(logo, text="", image=ctk.CTkImage(logo_image(52), size=(26, 26))).pack(side="left")
+        self.logo_ctk = [ctk.CTkImage(fr.resize((64, 64), Image.LANCZOS), size=(30, 30)) for fr in logo_frames()]
+        self.logo_lbl = ctk.CTkLabel(logo, text="", image=self.logo_ctk[0] if self.logo_ctk
+                                     else ctk.CTkImage(logo_image(64), size=(30, 30)))
+        self.logo_lbl.pack(side="left")
         ctk.CTkLabel(logo, text=" EZ", font=self.F.h(18), text_color=TEXT).pack(side="left")
         ctk.CTkLabel(logo, text="CURSOR", font=self.F.h(18), text_color=ACCENT).pack(side="left")
         ctk.CTkLabel(logo, text=f"v{APP_VERSION}", font=self.F.m(10), text_color=MUTED,
@@ -700,7 +1329,8 @@ class App:
 
         self.caps(sb, "MENU").pack(anchor="w", padx=24, pady=(0, 6))
         self.nav_buttons = {}
-        for key, label in (("cursor", "Con trỏ"), ("apps", "Ứng dụng"), ("opts", "Tùy chọn")):
+        for key, label in (("cursor", "Con trỏ"), ("library", "Bộ sưu tập"), ("fx", "Hiệu ứng"),
+                           ("apps", "Ứng dụng"), ("opts", "Tùy chọn")):
             icons = (ctk.CTkImage(nav_icon(key, "#FFFFFF", 40), size=(20, 20)),
                      ctk.CTkImage(nav_icon(key, TEXT2, 40), size=(20, 20)))
             b = ctk.CTkButton(sb, text="  " + label, anchor="w", height=46, corner_radius=10,
@@ -758,7 +1388,7 @@ class App:
         grid.grid_columnconfigure((0, 1, 2), weight=1, uniform="s")
         self.shape_buttons = {}
         for i, (shape, label) in enumerate(SHAPE_BUTTONS):
-            b = ctk.CTkButton(grid, text=label, height=38, corner_radius=9, border_width=1,
+            b = ctk.CTkButton(grid, text=label, height=38, width=10, corner_radius=9, border_width=1,
                               font=self.F.b(13, strong=True), command=lambda s=shape: self.set_shape(s))
             b.grid(row=i // 3, column=i % 3, sticky="ew", padx=3, pady=3)
             self.shape_buttons[shape] = b
@@ -813,9 +1443,15 @@ class App:
 
         row = ctk.CTkFrame(inner, fg_color="transparent")
         row.pack(fill="x", pady=(2, 0))
-        ctk.CTkLabel(row, text="Tô màu đã chọn cho ảnh", font=self.F.b(13), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(row, text="Tô màu cho ảnh tải lên", font=self.F.b(13), text_color=TEXT).pack(side="left")
         self.tint_var = tk.BooleanVar(value=self.cfg["tint_image"])
         self.switch(row, self.tint_var, self.set_tint).pack(side="right")
+
+        row = ctk.CTkFrame(inner, fg_color="transparent")
+        row.pack(fill="x", pady=(8, 0))
+        ctk.CTkLabel(row, text="Quầng sáng quanh con trỏ", font=self.F.b(13), text_color=TEXT).pack(side="left")
+        self.glow_var = tk.BooleanVar(value=self.cfg["glow"])
+        self.switch(row, self.glow_var, self.set_glow).pack(side="right")
         return page
 
     def build_preview_canvas(self):
@@ -836,6 +1472,332 @@ class App:
         mono = (self.F.mono, 9)
         self.coord_txt = c.create_text(int(16 * sc), h - int(30 * sc), anchor="w", text="", fill=CYAN_TEXT, font=mono)
         self.size_txt = c.create_text(w - int(16 * sc), h - int(30 * sc), anchor="e", text="", fill=CYAN_TEXT, font=mono)
+
+    # ------------------------------------------------------------ Tab Bộ sưu tập (Bibata)
+    def build_library_tab(self, parent):
+        page = ctk.CTkFrame(parent, fg_color="transparent")
+        self.header(page, "BỘ SƯU TẬP", "Con trỏ của EzCursor và bộ Bibata. Bấm vào con trỏ muốn dùng.").pack(
+            anchor="w", pady=(0, 14))
+        self.bib_tiles = {}
+        if not BIBATA_DIR.exists():
+            ctk.CTkLabel(page, text="Không tìm thấy thư mục bibata đi kèm phần mềm.", font=self.F.b(13),
+                         text_color=AMBER).pack(anchor="w")
+            return page
+
+        top = ctk.CTkFrame(page, fg_color="transparent")
+        top.pack(fill="x")
+        self.caps(top, "CHỦ ĐỀ").pack(anchor="w")
+        chips = ctk.CTkFrame(top, fg_color="transparent")
+        chips.pack(fill="x", pady=(6, 12))
+        self.theme_buttons = {}
+        themes = [(k, v[0], v[1]) for k, v in BIBATA_THEMES.items()] + [("custom", "Tùy chỉnh", None)]
+        for key, label, col in themes:
+            b = ctk.CTkButton(chips, text=label, height=40, width=118, corner_radius=10, border_width=1,
+                              font=self.F.b(13, strong=True), compound="left",
+                              command=lambda k=key: self.set_bib("bibata_theme", k))
+            b.pack(side="left", padx=(0, 8))
+            self.theme_buttons[key] = b
+
+        self.caps(page, "MÀU TÙY CHỈNH").pack(anchor="w")
+        sw = ctk.CTkFrame(page, fg_color="transparent")
+        sw.pack(fill="x", pady=(6, 12))
+        self.bib_swatches = {}
+        for c, name in SWATCHES:
+            b = ctk.CTkButton(sw, text="", width=32, height=32, corner_radius=16, fg_color=c,
+                              hover_color=mix(c, "#FFFFFF", 0.2), border_width=0,
+                              command=lambda c=c: self.set_bib_color(c))
+            b.pack(side="left", padx=(0, 7))
+            self.bib_swatches[c] = b
+        for c in ("#FFFFFF", "#000000"):
+            b = ctk.CTkButton(sw, text="", width=32, height=32, corner_radius=16, fg_color=c,
+                              hover_color=mix(c, "#808080", 0.25), border_width=1, border_color="#4A5266",
+                              command=lambda c=c: self.set_bib_color(c))
+            b.pack(side="left", padx=(0, 7))
+            self.bib_swatches[c] = b
+        self.bib_custom_btn = ctk.CTkButton(sw, text="", width=32, height=32, corner_radius=16,
+                                            image=ctk.CTkImage(simple_icon("plus", TEXT2, 32), size=(14, 14)),
+                                            fg_color="transparent", hover_color="#1A1E29", border_width=1,
+                                            border_color="#4A5266", command=self.pick_bib_color)
+        self.bib_custom_btn.pack(side="left")
+
+        opts = ctk.CTkFrame(page, fg_color="transparent")
+        opts.pack(fill="x", pady=(0, 12))
+        seg_kw = dict(height=34, font=self.F.b(12, strong=True), fg_color=FIELD, unselected_color=FIELD,
+                      unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
+                      selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
+        self.style_map = {"Modern · bo tròn": "modern", "Original · góc nhọn": "original"}
+        self.hand_map = {"Thuận tay phải": "right", "Thuận tay trái": "left"}
+        self.style_seg = ctk.CTkSegmentedButton(opts, values=list(self.style_map),
+                                                command=lambda v: self.set_bib("bibata_style", self.style_map[v]), **seg_kw)
+        self.style_seg.pack(side="left")
+        self.hand_seg = ctk.CTkSegmentedButton(opts, values=list(self.hand_map),
+                                               command=lambda v: self.set_bib("bibata_hand", self.hand_map[v]), **seg_kw)
+        self.hand_seg.pack(side="right")
+        inv_style = {v: k for k, v in self.style_map.items()}
+        inv_hand = {v: k for k, v in self.hand_map.items()}
+        self.style_seg.set(inv_style.get(self.cfg["bibata_style"], "Modern · bo tròn"))
+        self.hand_seg.set(inv_hand.get(self.cfg["bibata_hand"], "Thuận tay phải"))
+
+        grid = self.card(page)
+        grid.pack(fill="both", expand=True)
+        inner = ctk.CTkFrame(grid, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=10, pady=10)
+        cols = 5
+        for i in range(cols):
+            inner.grid_columnconfigure(i, weight=1, uniform="t")
+        self.own_tiles = {}
+        for shape, label, _f, _h, _g in OWN_CURSORS:
+            img = own_image(shape)
+            if img is None:
+                continue
+            b = ctk.CTkButton(inner, text=label, compound="top", height=94, width=10, corner_radius=12,
+                              border_width=1, font=self.F.b(12, strong=True),
+                              image=ctk.CTkImage(img.resize((112, 112), Image.LANCZOS), size=(56, 56)),
+                              command=lambda sh=shape: self.pick_own(sh))
+            n = len(self.own_tiles)
+            b.grid(row=0, column=n, sticky="ew", padx=4, pady=4)
+            self.own_tiles[shape] = b
+        offset = len(self.own_tiles)
+        for i, (name, label) in enumerate(BIBATA_CURSORS):
+            i += offset
+            b = ctk.CTkButton(inner, text=label, compound="top", height=94, width=10, corner_radius=12, border_width=1,
+                              font=self.F.b(12), command=lambda n=name: self.pick_bibata(n))
+            b.grid(row=i // cols, column=i % cols, sticky="ew", padx=4, pady=4)
+            self.bib_tiles[name] = b
+
+        foot = ctk.CTkFrame(page, fg_color="transparent")
+        foot.pack(fill="x", pady=(10, 0))
+        ctk.CTkLabel(foot, text="Chọn một màu để chuyển sang chủ đề Tùy chỉnh.", font=self.F.b(12),
+                     text_color=TEXT2).pack(side="left")
+        link = ctk.CTkLabel(foot, text="Bibata © Abdulkaiz Khatri · GPL-3.0", font=self.F.b(12),
+                            text_color=CYAN_TEXT, cursor="hand2")
+        link.pack(side="right")
+        link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/ful1e5/Bibata_Cursor"))
+        self._lib_sig = None
+        return page
+
+    def set_bib_color(self, color):
+        self.cfg["color"] = color
+        self.cfg["bibata_theme"] = "custom"
+        if self.cfg["shape"] != "Bibata":
+            self.cfg["shape"] = "Bibata"
+        self.refresh()
+
+    def pick_bib_color(self):
+        res = colorchooser.askcolor(color=self.cfg["color"], parent=self.win, title="Chọn màu")
+        if res and res[1]:
+            self.set_bib_color(res[1])
+
+    def set_bib(self, key, value):
+        self.cfg[key] = value
+        self.refresh()
+
+    def pick_own(self, shape):
+        self.cfg["shape"] = shape
+        self.refresh()
+
+    def pick_bibata(self, name):
+        self.cfg["bibata_cursor"] = name
+        self.cfg["shape"] = "Bibata"
+        self.refresh()
+
+    def update_library(self):
+        if not getattr(self, "bib_tiles", None):
+            return
+        c = self.cfg
+        for key, b in self.theme_buttons.items():
+            col = BIBATA_THEMES[key][1] if key in BIBATA_THEMES else c["color"]
+            dot = ctk.CTkImage(_ss(lambda d, s, col=col: d.ellipse(
+                [1 * s, 1 * s, 15 * s, 15 * s], fill=col, outline="#FFFFFF", width=int(1.5 * s)), 16), size=(14, 14))
+            on = key == c["bibata_theme"]
+            b.configure(image=dot, fg_color=mix(CARD, ACCENT, 0.16) if on else FIELD,
+                        hover_color=mix(CARD, ACCENT, 0.24) if on else "#161A23",
+                        border_color=ACCENT if on else BORDER, text_color="#FFFFFF" if on else TEXT2)
+        custom_on = c["bibata_theme"] == "custom"
+        known = set()
+        for col, b in self.bib_swatches.items():
+            known.add(col.lower())
+            on = custom_on and col.lower() == c["color"].lower()
+            plain = col in ("#FFFFFF", "#000000")
+            b.configure(border_width=3 if on else (1 if plain else 0),
+                        border_color=ACCENT if (on and col == "#FFFFFF") else ("#FFFFFF" if on else "#4A5266"))
+        if custom_on and c["color"].lower() not in known:
+            self.bib_custom_btn.configure(fg_color=c["color"], hover_color=c["color"], border_width=3,
+                                          border_color="#FFFFFF", image=None)
+        else:
+            self.bib_custom_btn.configure(fg_color="transparent", hover_color="#1A1E29", border_width=1,
+                                          border_color="#4A5266",
+                                          image=ctk.CTkImage(simple_icon("plus", TEXT2, 32), size=(14, 14)))
+        variant = self.bibata_variant()
+        colors = bibata_colors(c["bibata_theme"], c["color"])
+        sig = (variant, colors)
+        if sig != self._lib_sig:          # chỉ vẽ lại hình khi đổi chủ đề / kiểu dáng
+            self._lib_sig = sig
+            for name, b in self.bib_tiles.items():
+                im = bibata_image(BIBATA_DIR, variant, name, colors).resize((112, 112), Image.LANCZOS)
+                b.configure(image=ctk.CTkImage(im, size=(56, 56)))
+        tile_bg = mix(FIELD, "#FFFFFF", 0.05) if c["bibata_theme"] == "classic" else FIELD
+        for shape, tile in self.own_tiles.items():
+            on = c["shape"] == shape
+            tile.configure(fg_color=mix(CARD, ACCENT, 0.16) if on else FIELD,
+                           hover_color=mix(CARD, ACCENT, 0.24) if on else "#161A23",
+                           border_color=ACCENT if on else mix(BORDER, ACCENT, 0.35),
+                           text_color="#FFFFFF" if on else TEXT)
+        for name, b in self.bib_tiles.items():
+            on = c["shape"] == "Bibata" and name == c["bibata_cursor"]
+            b.configure(fg_color=mix(CARD, ACCENT, 0.16) if on else tile_bg,
+                        hover_color=mix(CARD, ACCENT, 0.24) if on else "#161A23",
+                        border_color=ACCENT if on else BORDER, text_color="#FFFFFF" if on else TEXT2)
+
+
+    # ------------------------------------------------------------ Tab Hiệu ứng
+    def build_fx_tab(self, parent):
+        page = ctk.CTkFrame(parent, fg_color="transparent")
+        self.header(page, "HIỆU ỨNG", "Thêm vệt sáng theo con trỏ và hiệu ứng khi click trong game.").pack(
+            anchor="w", pady=(0, 14))
+        self.fx_tiles = {}
+
+        def tile_group(title, options, key):
+            card = self.card(page)
+            card.pack(fill="x", pady=(0, 12))
+            self.caps(card, title).pack(anchor="w", padx=14, pady=(12, 6))
+            grid = ctk.CTkFrame(card, fg_color="transparent")
+            grid.pack(fill="x", padx=10, pady=(0, 12))
+            for i in range(6):
+                grid.grid_columnconfigure(i, weight=1, uniform="fx")
+            for i, (val, label) in enumerate(options):
+                b = ctk.CTkButton(grid, text=label, compound="top", height=84, width=10, corner_radius=12, border_width=1,
+                                  image=ctk.CTkImage(fx_icon(val, 96), size=(42, 42)), font=self.F.b(12),
+                                  command=lambda v=val, k=key: self.set_fx(k, v))
+                b.grid(row=0, column=i, sticky="ew", padx=4)
+                self.fx_tiles[(key, val)] = b
+
+        tile_group("VỆT THEO CON TRỎ", FX_TRAILS, "fx_trail")
+
+        # Hai nhóm nhỏ chung một hàng: khi click và quanh con trỏ
+        card = self.card(page)
+        card.pack(fill="x", pady=(0, 12))
+        grid = ctk.CTkFrame(card, fg_color="transparent")
+        grid.pack(fill="x", padx=10, pady=(4, 12))
+        for i in range(6):
+            grid.grid_columnconfigure(i, weight=1, uniform="fx")
+        self.caps(grid, "KHI CLICK CHUỘT TRÁI").grid(row=0, column=0, columnspan=3, sticky="w", padx=4, pady=(8, 6))
+        self.caps(grid, "QUANH CON TRỎ").grid(row=0, column=4, columnspan=2, sticky="w", padx=4, pady=(8, 6))
+        groups = [(0, FX_CLICKS, "fx_click"), (4, [(False, "Tắt"), (True, "Lấp lánh")], "cursor_sparkle")]
+        for start, options, key in groups:
+            for i, (val, label) in enumerate(options):
+                icon = val if isinstance(val, str) else ("aura" if val else "off")
+                b = ctk.CTkButton(grid, text=label, compound="top", height=84, width=10, corner_radius=12,
+                                  border_width=1, image=ctk.CTkImage(fx_icon(icon, 96), size=(40, 40)),
+                                  font=self.F.b(12), command=lambda v=val, k=key: self.set_fx(k, v))
+                b.grid(row=1, column=start + i, sticky="ew", padx=4)
+                self.fx_tiles[(key, val)] = b
+
+        opt = self.card(page)
+        opt.pack(fill="x")
+        seg_kw = dict(height=32, font=self.F.b(12, strong=True), fg_color=FIELD, unselected_color=FIELD,
+                      unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
+                      selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
+        self.fx_color_map = {"Theo màu con trỏ": "cursor", "Ba màu EzCursor": "ez"}
+        self.fx_dens_map = {"Ít": "low", "Vừa": "mid", "Nhiều": "high"}
+        row = ctk.CTkFrame(opt, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=(12, 6))
+        ctk.CTkLabel(row, text="Màu hiệu ứng", font=self.F.b(13), text_color=TEXT).pack(side="left")
+        self.fx_color_seg = ctk.CTkSegmentedButton(row, values=list(self.fx_color_map),
+                                                   command=lambda v: self.set_fx("fx_color", self.fx_color_map[v]), **seg_kw)
+        self.fx_color_seg.pack(side="right")
+        row = ctk.CTkFrame(opt, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=(6, 12))
+        ctk.CTkLabel(row, text="Mật độ", font=self.F.b(13), text_color=TEXT).pack(side="left")
+        self.fx_dens_seg = ctk.CTkSegmentedButton(row, values=list(self.fx_dens_map),
+                                                  command=lambda v: self.set_fx("fx_density", self.fx_dens_map[v]), **seg_kw)
+        self.fx_dens_seg.pack(side="right")
+
+        inv = {v: k for k, v in self.fx_color_map.items()}
+        self.fx_color_seg.set(inv.get(self.cfg["fx_color"], "Theo màu con trỏ"))
+        inv = {v: k for k, v in self.fx_dens_map.items()}
+        self.fx_dens_seg.set(inv.get(self.cfg["fx_density"], "Vừa"))
+
+        test = ctk.CTkFrame(page, fg_color="transparent")
+        test.pack(fill="x", pady=(14, 0))
+        self.fx_test_btn = ctk.CTkButton(test, text="THỬ NGAY TRÊN MÀN HÌNH", command=self.fx_test, height=44,
+                                         width=240, corner_radius=10, fg_color=ACCENT,
+                                         hover_color=mix(ACCENT, "#FFFFFF", 0.15), font=self.F.h(14))
+        self.fx_test_btn.pack(side="left")
+        ctk.CTkLabel(test, text="   Di chuột và click trong 8 giây để xem hiệu ứng.", font=self.F.b(12),
+                     text_color=TEXT2).pack(side="left")
+        return page
+
+    def set_fx(self, key, value):
+        self.cfg[key] = value
+        if key == "cursor_sparkle":
+            self.refresh()          # cần tạo lại khung hình con trỏ
+        else:
+            self.update_fx_ui()
+            self.save()
+
+    def update_fx_ui(self):
+        if not getattr(self, "fx_tiles", None):
+            return
+        for (key, val), b in self.fx_tiles.items():
+            on = self.cfg[key] == val
+            b.configure(fg_color=mix(CARD, ACCENT, 0.16) if on else FIELD,
+                        hover_color=mix(CARD, ACCENT, 0.24) if on else "#161A23",
+                        border_color=ACCENT if on else BORDER, text_color="#FFFFFF" if on else TEXT2)
+
+    def fx_test(self):
+        if self.cfg["fx_trail"] == "off" and self.cfg["fx_click"] == "off":
+            messagebox.showinfo(APP_NAME, "Hãy chọn ít nhất một hiệu ứng trước khi thử.", parent=self.win)
+            return
+        self.fx_test_until = time.perf_counter() + 8
+        self.fx_test_btn.configure(text="ĐANG THỬ...", state="disabled")
+        self.win.after(8000, lambda: self.fx_test_btn.configure(text="THỬ NGAY TRÊN MÀN HÌNH", state="normal"))
+
+    def fx_palette(self):
+        if self.cfg["fx_color"] == "ez":
+            return EZ_COLORS
+        g = self.glow_color()
+        return [g, mix(g, "#FFFFFF", 0.45)]
+
+    def fx_loop(self):
+        """Vòng lặp hiệu ứng ~60 khung/giây, chỉ vẽ khi có hạt đang hiện."""
+        try:
+            now = time.perf_counter()
+            dt = min(0.05, now - self.fx_t)
+            self.fx_t = now
+            c = self.cfg
+            self.fx_tick = getattr(self, "fx_tick", 0) + 1
+            if self.cursor_frames and self.active and self.fx_tick % 6 == 0:
+                self.cf_idx = (self.cf_idx + 1) % len(self.cursor_frames)
+                self.ovl.set_image(self.cursor_frames[self.cf_idx])
+            on = c["fx_trail"] != "off" or c["fx_click"] != "off"
+            want = on and (self.active or now < self.fx_test_until)
+            if want or self.fx.busy():
+                pt = wintypes.POINT()
+                user32.GetCursorPos(ctypes.byref(pt))
+                down = bool(key_down(VK_LBUTTON))
+                clicked = want and down and not self.fx_prev_click
+                self.fx_prev_click = down
+                pal = self.fx_palette()
+                cfg_now = c if want else dict(c, fx_trail="off")
+                ghost = self.composed[0] if self.composed else None
+                self.fx.update(now, dt, (pt.x, pt.y), clicked, cfg_now, pal, ghost)
+                img, pos = self.fx.render(now, (pt.x, pt.y), cfg_now, pal, self.ov_hot)
+                if img is None:
+                    self.fxw.show(False)
+                else:
+                    self.fxw.set_image(img, pos)
+                    if not self.fxw.visible:
+                        self.fxw.show(True)
+                        user32.SetWindowPos(self.fxw.hwnd, self.ovl.hwnd, 0, 0, 0, 0, 0x2 | SWP_NOSIZE | SWP_NOACTIVATE)
+            else:
+                self.fxw.show(False)
+                self.fx.last = None
+        except tk.TclError:
+            return
+        except Exception:
+            pass
+        self.ov.after(16, self.fx_loop)
 
     def build_apps_tab(self, parent):
         page = ctk.CTkFrame(parent, fg_color="transparent")
@@ -874,12 +1836,15 @@ class App:
         self.hide_var = tk.BooleanVar(value=self.cfg["hide_real"])
         self.startup_var = tk.BooleanVar(value=is_startup_enabled())
         self.auto_upd_var = tk.BooleanVar(value=self.cfg["auto_check_update"])
+        self.splash_var = tk.BooleanVar(value=self.cfg["splash"])
         rows = [("Ẩn con trỏ thật của game", "Chỉ hiện con trỏ của EzCursor khi đang ở trong game.",
                  self.hide_var, self.set_hide),
                 ("Khởi động cùng Windows", "Chạy ngầm dưới khay hệ thống khi bật máy.",
                  self.startup_var, self.set_startup_opt),
                 ("Tự động kiểm tra cập nhật", "Thông báo khi có phiên bản mới trên GitHub.",
-                 self.auto_upd_var, self.set_auto_update)]
+                 self.auto_upd_var, self.set_auto_update),
+                ("Màn hình chào khi mở", "Hiện logo động khoảng 2 giây mỗi lần mở EzCursor.",
+                 self.splash_var, self.set_splash)]
         for title, sub, var, cmd in rows:
             r = ctk.CTkFrame(box, fg_color="transparent")
             r.pack(fill="x", padx=18, pady=(10, 0))
@@ -901,6 +1866,19 @@ class App:
         self.upd_label = ctk.CTkLabel(t, text="", font=self.F.b(12), text_color=TEXT2, height=18)
         self.upd_label.pack(anchor="w")
         self.cyan_button(r, "Kiểm tra cập nhật", lambda: self.check_update(manual=True)).pack(side="right")
+
+        r = ctk.CTkFrame(box, fg_color="transparent")
+        r.pack(fill="x", padx=18, pady=(0, 12))
+        t = ctk.CTkFrame(r, fg_color="transparent")
+        t.pack(side="left")
+        ctk.CTkLabel(t, text="Khôi phục cài đặt gốc", font=self.F.b(14, strong=True), text_color=TEXT,
+                     height=20).pack(anchor="w")
+        ctk.CTkLabel(t, text="Xóa mọi lựa chọn đã lưu và khởi động lại EzCursor như mới cài.",
+                     font=self.F.b(12), text_color=TEXT2, height=18).pack(anchor="w")
+        ctk.CTkButton(r, text="Khôi phục", command=self.reset_settings, height=40, width=120, corner_radius=10,
+                      border_width=1, border_color="#FF5A5A", fg_color=mix(CARD, "#FF5A5A", 0.10),
+                      hover_color=mix(CARD, "#FF5A5A", 0.22), text_color="#FF8A8A",
+                      font=self.F.b(13, strong=True)).pack(side="right")
 
         hk = self.card(page)
         hk.pack(fill="x", pady=(16, 0))
@@ -954,6 +1932,8 @@ class App:
         if self.active:
             sub = "Áp dụng cho mọi ứng dụng." if self.cfg["all_apps"] else f"Trong game: {self.fg_exe}"
             return "●  ĐANG HOẠT ĐỘNG", GREEN, sub
+        if self.shell_open:
+            return "●  TẠM DỪNG", AMBER, "Đang ở trên giao diện của Windows."
         if not self.cfg["apps"]:
             return "●  CHƯA CHỌN GAME", AMBER, "Vào tab Ứng dụng để chọn game."
         return "●  ĐANG CHỜ GAME", AMBER, "Chờ: " + ", ".join(self.cfg["apps"])
@@ -970,12 +1950,100 @@ class App:
             return ACCENT
         return self.cfg["color"]
 
+    def glow_color(self):
+        return self.composed[2] if self.composed else self.preview_color()
+
+    def compose_cursor(self):
+        """Ảnh con trỏ hoàn chỉnh dùng cho cả overlay lẫn xem trước: (ảnh, điểm click, màu quầng)."""
+        c = self.cfg
+        s = c["size"]
+        if own_image(c["shape"]) is not None:
+            _, _, _, (hx, hy), glow_col = OWN_BY_ID[c["shape"]]
+            im = own_image(c["shape"]).resize((s, s), Image.LANCZOS)
+            hot = (round(hx * s / 256), round(hy * s / 256))
+        elif c["shape"] == "Bibata" and BIBATA_DIR.exists():
+            variant = self.bibata_variant()
+            cols = bibata_colors(c["bibata_theme"], c["color"])
+            im = bibata_image(BIBATA_DIR, variant, c["bibata_cursor"], cols).resize((s, s), Image.LANCZOS)
+            hx, hy = BIBATA_META["hotspots"].get(f"{variant}/{c['bibata_cursor']}", [128, 128])
+            hot = (round(hx * s / 256), round(hy * s / 256))
+            glow_col = cols[0] if luminance(cols[0]) > 60 else cols[1]
+        else:
+            shape = c["shape"] if c["shape"] not in ("Bibata",) + tuple(OWN_BY_ID) else "Vòng tròn"
+            src = self.src_img
+            if src is not None and c["tint_image"]:
+                src = tint_image(src, c["color"])
+            glow_col = self.preview_color()
+            im, hot = render_shape(shape, glow_col, s, src, c["hotspot"])
+        if c["glow"]:
+            im, hot = add_glow(im, hot, glow_col)
+        return im, hot, glow_col
+
+    def bibata_variant(self):
+        return self.cfg["bibata_style"] + ("-right" if self.cfg["bibata_hand"] == "left" else "")
+
+    def rebuild_overlay(self):
+        self.composed = self.compose_cursor()
+        im, self.ov_hot, _ = self.composed
+        self.cursor_frames = None
+        self.preview_photos = None
+        self.ovl.set_image(im)
+        if getattr(self, "_cf_job", None):
+            self.ov.after_cancel(self._cf_job)
+            self._cf_job = None
+        if self.cfg["cursor_sparkle"]:
+            self._cf_job = self.ov.after(160, self.build_cursor_frames)
+
+    def build_cursor_frames(self):
+        """Tạo 24 khung hình con trỏ có ngôi sao nhấp nháy quanh (vòng lặp ~2,4 giây)."""
+        self._cf_job = None
+        if not self.composed:
+            return
+        im, hot, gcol = self.composed
+        s = self.cfg["size"]
+        bb = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox() or (0, 0, im.width, im.height)
+        pad = max(8, s // 4)
+        W, H = im.width + 2 * pad, im.height + 2 * pad
+        x0, y0, x1, y1 = (v + pad for v in bb)
+        bw, bh = x1 - x0, y1 - y0
+        spots = [  # (x, y, bán kính, màu, thời điểm sáng nhất)
+            (x1 - 0.02 * bw, y0 + 0.10 * bh, s * 0.12, "#FFFFFF", 0.15),
+            (x1 + 0.06 * bw, y0 + 0.42 * bh, s * 0.075, "#2EE59D", 0.48),
+            (x0 + 0.02 * bw, y1 - 0.02 * bh, s * 0.065, gcol, 0.78),
+        ]
+        frames = []
+        N = 24
+        for i in range(N):
+            t = i / N
+            fr = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            fr.alpha_composite(im, (pad, pad))
+            for x, y, R, col, ctr in spots:
+                d = min(abs(t - ctr), 1 - abs(t - ctr))
+                p = max(0.0, math.cos(min(1.0, d / 0.2) * math.pi / 2)) ** 1.5
+                if p < 0.04:
+                    continue
+                size = max(8, int(R * (0.45 + 0.7 * p) / 0.36))
+                st = self.fx.sprite("star", col, size)
+                st = self.fx.faded(("star", col, size), st, min(1.0, p * 1.3))
+                if st is None:
+                    continue
+                px, py = int(x - st.width / 2), int(y - st.height / 2)
+                if 0 <= px and 0 <= py and px + st.width <= W and py + st.height <= H:
+                    fr.alpha_composite(st, (px, py))
+            frames.append(fr)
+        self.cursor_frames = frames
+        self.cf_idx = 0
+        self.ov_hot = (hot[0] + pad, hot[1] + pad)
+        self.ovl.set_image(frames[0])
+        if self.active:
+            self.move_overlay()
+        self.preview_photos = [ImageTk.PhotoImage(fr, master=self.ov) for fr in frames]
+
     def update_preview(self):
         c = self.cfg
-        src = self.src_img
-        if src is not None and c["tint_image"]:
-            src = tint_image(src, c["color"])
-        im = render_preview(c["shape"], self.preview_color(), c["size"], src, c["hotspot"])
+        if self.composed is None:
+            self.rebuild_overlay()
+        im = self.composed[0]
         self.pimg = ImageTk.PhotoImage(im, master=self.ov)
         self.pcv.itemconfig(self.pimg_id, image=self.pimg)
         self.pcv.itemconfig(self.size_txt, text=f"{c['size']} PX")
@@ -1002,18 +2070,19 @@ class App:
         self.size_label.configure(text=f"{c['size']} px")
 
     def refresh(self):
-        c = self.cfg
-        if self.active:
-            draw_cursor(self.cv, c["size"], c["shape"], c["color"], self.img_tk, c["hotspot"])
-        else:
-            self.cv.delete("all")
+        self.rebuild_overlay()
         self.update_controls()
+        self.update_library()
+        self.update_fx_ui()
         self.update_preview()
         self.update_status()
         self.save()
 
     def compute_active(self):
         if not self.enabled:
+            return False
+        self.shell_open = shell_ui_open()
+        if self.shell_open:          # menu Start, Search, Alt+Tab... -> dùng con trỏ thật
             return False
         if self.cfg["all_apps"]:
             return True
@@ -1025,11 +2094,9 @@ class App:
             return
         self.active = on
         show_real_cursor(not (on and self.cfg["hide_real"]))
-        c = self.cfg
         if on:
-            draw_cursor(self.cv, c["size"], c["shape"], c["color"], self.img_tk, c["hotspot"])
-        else:
-            self.cv.delete("all")
+            self.move_overlay()
+        self.ovl.show(on)
         self.update_status()
 
     # ------------------------------------------------------------ Danh sách ứng dụng
@@ -1119,7 +2186,7 @@ class App:
         self.refresh()
 
     def next_shape(self):
-        options = SHAPES if self.img_tk is not None else SHAPES[:-1]
+        options = [x for x in SHAPES if x != "Ảnh tải lên" or self.src_img is not None]
         cur = self.cfg["shape"]
         i = options.index(cur) if cur in options else -1
         self.set_shape(options[(i + 1) % len(options)])
@@ -1128,7 +2195,8 @@ class App:
         if color.lower() == TRANSPARENT:
             color = "#020202"
         self.cfg["color"] = color
-        self.rebuild_image()
+        if self.cfg["shape"] == "Bibata":
+            self.cfg["bibata_theme"] = "custom"
         self.refresh()
 
     def pick_color(self):
@@ -1140,14 +2208,14 @@ class App:
         if s == self.cfg["size"]:
             return
         self.cfg["size"] = s
-        self.ov.geometry(f"{s}x{s}")
-        self.cv.config(width=s, height=s)
-        self.rebuild_image()
         self.refresh()
 
     def set_tint(self):
         self.cfg["tint_image"] = bool(self.tint_var.get())
-        self.rebuild_image()
+        self.refresh()
+
+    def set_glow(self):
+        self.cfg["glow"] = bool(self.glow_var.get())
         self.refresh()
 
     def set_hotspot(self, h):
@@ -1191,29 +2259,12 @@ class App:
             if not silent:
                 messagebox.showerror("Lỗi", f"Không mở được ảnh:\n{e}", parent=self.win)
             return False
-        self.rebuild_image()
         return True
 
-    def rebuild_image(self):
-        if self.src_img is None:
-            self.img_tk = None
-            return
-        s = self.cfg["size"]
-        w, h = self.src_img.size
-        k = s / max(w, h)
-        im = self.src_img.resize((max(1, round(w * k)), max(1, round(h * k))), Image.LANCZOS)
-        if self.cfg["tint_image"]:
-            im = tint_image(im, self.cfg["color"])
-        im.putalpha(im.getchannel("A").point(lambda v: 255 if v >= 128 else 0))
-        self.img_tk = ImageTk.PhotoImage(im, master=self.ov)
-
-    def hotspot_offset(self):
-        c = self.cfg
-        if c["shape"] == "Mũi tên":
-            return ARROW_TIP, ARROW_TIP
-        if c["shape"] == "Ảnh tải lên" and self.img_tk is not None and c["hotspot"] == "Góc trên trái":
-            return 0, 0
-        return c["size"] // 2, c["size"] // 2
+    def move_overlay(self):
+        pt = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        self.ovl.move(pt.x - self.ov_hot[0], pt.y - self.ov_hot[1])
 
     def hide_to_tray(self):
         self.win.withdraw()
@@ -1226,15 +2277,131 @@ class App:
             except Exception:
                 pass
 
+    def apply_window_icon(self):
+        """Icon độ phân giải cao cho thanh tiêu đề và taskbar."""
+        for name in ("logo.png", "ezcursor.ico"):
+            p = res_path(name)
+            if p.exists():
+                try:
+                    im = Image.open(p).convert("RGBA")
+                    self._win_icons = [ImageTk.PhotoImage(im.resize((n, n), Image.LANCZOS), master=self.ov)
+                                       for n in (256, 64, 32, 16)]
+                    self.win.iconphoto(False, *self._win_icons)
+                    return
+                except Exception:
+                    pass
+
+    def fix_window_style(self):
+        """Cửa sổ chính là cửa sổ độc lập, không 'luôn trên cùng', để chuyển app khác thì lùi xuống."""
+        try:
+            hwnd = user32.GetParent(self.win.winfo_id())
+            if not hwnd:
+                return
+            user32.SetWindowLongPtrW(hwnd, -8, 0)                       # GWLP_HWNDPARENT: bỏ cửa sổ sở hữu
+            ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex & ~0x8)          # bỏ WS_EX_TOPMOST
+            dwm = ctypes.windll.dwmapi
+            for attr, val in ((20, 1),                      # chế độ tối cho thanh tiêu đề
+                              (35, 0x00120D0B),             # màu nền thanh tiêu đề = BG
+                              (36, 0x00F0EAE8),             # màu chữ tiêu đề
+                              (34, 0x00382B26)):            # màu viền cửa sổ
+                v = ctypes.c_int(val)
+                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
+            user32.SetWindowPos(hwnd, wintypes.HWND(-2), 0, 0, 0, 0,     # HWND_NOTOPMOST
+                                0x2 | 0x1 | 0x10 | 0x20)                 # NOMOVE|NOSIZE|NOACTIVATE|FRAMECHANGED
+        except Exception:
+            pass
+
     def show_window(self):
         self.win.deiconify()
         self.win.lift()
         self.win.focus_force()
+        self.win.after(50, self.fix_window_style)
         if self.pending_update:
             info, self.pending_update = self.pending_update, None
             self.show_update_dialog(info, manual=False)
 
     # ------------------------------------------------------------ Cập nhật
+    def reset_settings(self):
+        if not messagebox.askyesno(APP_NAME, "Khôi phục toàn bộ cài đặt về mặc định?\n\n"
+                                   "Danh sách game, con trỏ, hiệu ứng và ảnh đã tải lên sẽ bị xóa. "
+                                   "EzCursor sẽ tự khởi động lại.", parent=self.win):
+            return
+        for f in APP_DIR.glob("custom.*"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+        self.cfg = dict(DEFAULT_CFG)
+        self.cfg["apps"] = []
+        self.enabled = True
+        self.save()
+        if getattr(sys, "frozen", False):
+            args = f'"{sys.executable}"'
+        else:
+            pyw = Path(sys.executable).with_name("pythonw.exe")
+            args = f'"{pyw if pyw.exists() else sys.executable}" "{Path(__file__).resolve()}"'
+        # đợi bản hiện tại thoát hẳn rồi mới mở lại
+        subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & start "" {args}',
+                         shell=True, creationflags=0x08000000)
+        self.quit()
+
+    def set_splash(self):
+        self.cfg["splash"] = bool(self.splash_var.get())
+        self.save()
+
+    def show_splash(self):
+        """Màn hình chào: logo động ở giữa màn hình, hiện dần rồi mờ dần (~2 giây)."""
+        import tkinter.font as tkfont
+        sc = self.sc
+        W, H = int(340 * sc), int(340 * sc)
+        sp = tk.Toplevel(self.ov)
+        sp.overrideredirect(True)
+        sp.attributes("-topmost", True)
+        sp.configure(bg=BG)
+        sp.geometry(f"{W}x{H}+{(sp.winfo_screenwidth() - W) // 2}+{(sp.winfo_screenheight() - H) // 2}")
+        try:
+            sp.attributes("-alpha", 0.0)
+        except tk.TclError:
+            pass
+        try:   # bo góc trên Windows 11
+            hwnd = user32.GetParent(sp.winfo_id())
+            pref = ctypes.c_int(2)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(pref), ctypes.sizeof(pref))
+        except Exception:
+            pass
+        cv = tk.Canvas(sp, width=W, height=H, bg=BG, highlightthickness=1, highlightbackground=BORDER, bd=0)
+        cv.pack()
+        size = int(200 * sc)
+        photos = [ImageTk.PhotoImage(fr.resize((size, size), Image.LANCZOS), master=self.ov) for fr in logo_frames()]
+        img_id = cv.create_image(W // 2, int(H * 0.42), image=photos[0])
+        font = tkfont.Font(root=self.ov, family=self.F.head, size=20, weight="bold")
+        w1, w2 = font.measure("EZ"), font.measure("CURSOR")
+        x0, ty = W / 2 - (w1 + w2) / 2, int(H * 0.81)
+        cv.create_text(x0, ty, anchor="w", text="EZ", fill=TEXT, font=font)
+        cv.create_text(x0 + w1, ty, anchor="w", text="CURSOR", fill=ACCENT, font=font)
+        cv.create_text(W // 2, int(H * 0.9), text=f"v{APP_VERSION}", fill=MUTED, font=(self.F.mono, 9))
+        sp._photos = photos
+        total = 44
+        state = {"i": 0}
+
+        def step():
+            i = state["i"]
+            state["i"] += 1
+            try:
+                cv.itemconfig(img_id, image=photos[i % len(photos)])
+                alpha = min(1.0, i / 6) if i < total - 8 else max(0.0, (total - i) / 8)
+                sp.attributes("-alpha", alpha)
+            except tk.TclError:
+                pass
+            if i >= total:
+                sp.destroy()
+                self.splashing = False
+                self.show_window()
+                return
+            sp.after(45, step)
+        step()
+
     def set_auto_update(self):
         self.cfg["auto_check_update"] = bool(self.auto_upd_var.get())
         self.save()
@@ -1301,7 +2468,7 @@ class App:
             except Exception as e:
                 messagebox.showerror(APP_NAME, f"Không chạy được bộ cài:\n{e}", parent=self.upd_dialog)
                 return
-            self.ov.after(500, self.quit)
+            self.ov.after(200, self.quit)
         elif kind == "dl_error":
             self.btn_update.configure(state="normal")
             self.dl_label.configure(text="Tải về thất bại.")
@@ -1401,11 +2568,15 @@ class App:
                 r = (self.cfg["size"] / 2 + 20) * (0.5 + 1.2 * phase)
                 cx, cy = self.pw / 2, self.ph / 2
                 self.pcv.coords(self.ping, cx - r, cy - r, cx + r, cy + r)
-                self.pcv.itemconfig(self.ping, outline=mix(self.preview_color(), FIELD, min(1, phase * 1.05)))
+                self.pcv.itemconfig(self.ping, outline=mix(self.glow_color(), FIELD, min(1, phase * 1.05)))
                 if f % 3 == 0:
                     pt = wintypes.POINT()
                     user32.GetCursorPos(ctypes.byref(pt))
                     self.pcv.itemconfig(self.coord_txt, text=f"X {pt.x} · Y {pt.y}")
+            if self.logo_ctk and f % 2 == 0:
+                self.logo_lbl.configure(image=self.logo_ctk[(f // 2) % len(self.logo_ctk)])
+            if self.tab == "cursor" and self.preview_photos and f % 3 == 0:
+                self.pcv.itemconfig(self.pimg_id, image=self.preview_photos[(f // 3) % len(self.preview_photos)])
             if f % 24 == 0:
                 self.update_status(blink=(f // 24) % 2 == 1 and self.active)
         self.ov.after(33, self.anim)
@@ -1462,17 +2633,18 @@ class App:
                     action()
                     if flag is QUIT_FLAG:
                         return
+        was_shell = self.shell_open
         self.set_active(self.compute_active())
+        if was_shell != self.shell_open:
+            self.update_status()
         if self.active:
-            pt = wintypes.POINT()
-            user32.GetCursorPos(ctypes.byref(pt))
-            dx, dy = self.hotspot_offset()
-            user32.SetWindowPos(self.hwnd, HWND_TOPMOST, pt.x - dx, pt.y - dy, 0, 0,
-                                SWP_NOSIZE | SWP_NOACTIVATE)
+            self.move_overlay()
         self.ov.after(4, self.tick)
 
     def quit(self):
         cleanup()
+        self.ovl.destroy()
+        self.fxw.destroy()
         self.save()
         try:
             self.icon.stop()
@@ -1481,7 +2653,14 @@ class App:
         self.ov.destroy()
 
 
+APP_USER_MODEL_ID = "Columbustrade.EzCursor"
+
+
 def main():
+    try:   # để taskbar nhận EzCursor là một ứng dụng riêng, dùng icon của EzCursor
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    except Exception:
+        pass
     kernel32.CreateMutexW(None, False, "EzCursor_SingleInstance")
     already_running = kernel32.GetLastError() == ERROR_ALREADY_EXISTS
     if "--quit" in sys.argv:

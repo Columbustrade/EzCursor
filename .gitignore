@@ -1,0 +1,7 @@
+# Thư mục tạo ra khi build
+build/
+dist/
+installer/
+*.spec
+__pycache__/
+*.pyc

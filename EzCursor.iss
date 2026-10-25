@@ -1,7 +1,7 @@
 ﻿; Bộ cài đặt EzCursor - biên dịch bằng Inno Setup 6 (build_installer.bat làm tự động)
 
 #define MyAppName "EzCursor"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "EzCursor"
 #define MyAppExeName "EzCursor.exe"
 
@@ -21,6 +21,7 @@ OutputBaseFilename=EzCursor_Setup_{#MyAppVersion}
 SetupIconFile=ezcursor.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
+LicenseFile=LICENSE
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -35,13 +36,18 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Tạo shortcut ngoài Desktop"; GroupDescription: "Tùy chọn:"
 Name: "startup"; Description: "Khởi động cùng Windows (chạy ngầm dưới khay hệ thống)"; GroupDescription: "Tùy chọn:"; Flags: unchecked
 
+[InstallDelete]
+; Xóa thư viện của bản cũ trước khi cài bản mới
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; Bản build dạng thư mục: EzCursor.exe + thư mục _internal
+Source: "dist\EzCursor\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; AppUserModelID: "Columbustrade.EzCursor"
 Name: "{group}\Gỡ cài đặt {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; AppUserModelID: "Columbustrade.EzCursor"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "EzCursor"; ValueData: """{app}\{#MyAppExeName}"" --tray"; Tasks: startup; Flags: uninsdeletevalue
@@ -66,11 +72,12 @@ begin
   if FileExists(ExePath) then
   begin
     Exec(ExePath, '--quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(1500);
+    Sleep(2500);
   end;
   // Dự phòng: nếu vẫn còn chạy thì buộc tắt
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im {#MyAppExeName}', '', SW_HIDE,
        ewWaitUntilTerminated, ResultCode);
+  Sleep(800);
 end;
 
 function ShouldRelaunch(): Boolean;
