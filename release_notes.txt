@@ -1,19 +1,6 @@
-✦ Con trỏ mới
-- Con trỏ mặc định Liquid Drop và Mảnh hồng trong Bộ sưu tập
-- Bộ sưu tập Bibata: chủ đề Amber, Classic, Ice hoặc màu tùy chỉnh, kiểu Modern/Original, cho cả người thuận tay trái
-- Viền con trỏ mượt hơn, có thể bật quầng sáng
-
-✦ Tab Hiệu ứng mới
-- Vệt theo con trỏ: Lấp lánh, Vệt neon, Cầu vồng, Bóng mờ, Bong bóng
-- Hiệu ứng khi click: Gợn sóng, Pháo hoa
-- Lấp lánh quanh con trỏ kể cả khi đứng yên
-- Nút "Thử ngay trên màn hình"
+✦ Ngôn ngữ / Language
+- Thêm tiếng Anh: vào Tùy chọn → Ngôn ngữ để chuyển Tiếng Việt / English, đổi ngay không cần khởi động lại
+- English interface: go to Options → Language to switch between Tiếng Việt and English instantly
 
 ✦ Giao diện
-- Logo và icon mới, logo động, màn hình chào khi mở
-- Thanh tiêu đề tối, sửa lỗi giao diện bị tràn trên một số màn hình
-- Nút Khôi phục cài đặt gốc trong tab Tùy chọn
-
-✦ Sửa lỗi
-- Con trỏ thật hiện lại khi mở menu Start, Search, Alt+Tab hoặc rê chuột lên taskbar
-- Cửa sổ EzCursor không còn luôn nằm đè lên ứng dụng khác
+- Tab Tùy chọn gọn hơn
