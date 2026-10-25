@@ -4,6 +4,7 @@ EzCursor - con trỏ chuột tùy chỉnh cho game có con trỏ riêng (vd: Las
 
 - Giao diện Neon HUD (CustomTkinter)
 - Tab "Ứng dụng": chọn ứng dụng đang chạy để áp dụng con trỏ, bấm Áp dụng
+- Giao diện tiếng Việt / tiếng Anh (tab Tùy chọn > Ngôn ngữ)
 - Bấm X: thu nhỏ xuống khay hệ thống. Thoát hẳn: menu khay hoặc Ctrl+Alt+Q
 Phím tắt: Ctrl+Alt+H bật/tắt, Ctrl+Alt+R đổi hình, Ctrl+Alt+1..5 đổi màu, Ctrl+Alt+Q thoát
 Cài đặt lưu tại %APPDATA%\\EzCursor
@@ -264,6 +265,7 @@ DEFAULT_CFG = {
     "auto_check_update": True,
     "last_update_check": 0,
     "skipped_version": "",
+    "language": "vi",
 }
 
 
@@ -317,12 +319,118 @@ def load_cfg():
         cfg["fx_color"] = "cursor"
     if cfg["fx_density"] not in ("low", "mid", "high"):
         cfg["fx_density"] = "mid"
+    if cfg["language"] not in dict(LANGUAGES):
+        cfg["language"] = "vi"
     if not isinstance(cfg["apps"], list):
         cfg["apps"] = list(DEFAULT_CFG["apps"])
     if cfg["image"] and not Path(cfg["image"]).exists():
         alt = APP_DIR / Path(cfg["image"]).name
         cfg["image"] = str(alt) if alt.exists() else ""
     return cfg
+
+
+# ---------------------------------------------------------------- Ngôn ngữ giao diện
+LANGUAGES = [("vi", "Tiếng Việt"), ("en", "English")]
+LANG = "vi"          # đổi qua App.set_language
+# Bảng dịch Việt -> Anh. Chuỗi tiếng Việt là khóa; thiếu khóa thì giữ nguyên tiếng Việt.
+TR_EN = {
+    # Thanh bên & khay hệ thống
+    "Con trỏ": "Cursor", "Bộ sưu tập": "Library", "Hiệu ứng": "Effects", "Ứng dụng": "Apps",
+    "Tùy chọn": "Options", "TRẠNG THÁI": "STATUS", "Bật EzCursor": "Enable EzCursor",
+    "Mở EzCursor": "Open EzCursor", "Bật con trỏ": "Enable cursor", "Kiểm tra cập nhật": "Check for updates",
+    "Thoát": "Quit",
+    # Tab Con trỏ
+    "CON TRỎ": "CURSOR",
+    "Chọn hình dạng, màu sắc và kích thước con trỏ trong game.": "Choose the shape, color and size of your in-game cursor.",
+    "XEM TRƯỚC": "PREVIEW", "HÌNH DẠNG": "SHAPE", "MÀU SẮC": "COLOR", "KÍCH THƯỚC": "SIZE",
+    "ẢNH TÙY CHỈNH": "CUSTOM IMAGE", "Tải ảnh lên": "Upload image", "(chưa có ảnh)": "(no image)",
+    "Điểm click": "Click point", "Giữa ảnh": "Center", "Góc trên trái": "Top-left",
+    "Tô màu cho ảnh tải lên": "Tint uploaded image", "Quầng sáng quanh con trỏ": "Glow around cursor",
+    "Mũi tên": "Arrow", "Vòng tròn": "Circle", "Dấu thập": "Cross", "Chấm tròn": "Dot",
+    "Kim cương": "Diamond", "Ảnh": "Image",
+    # Tab Bộ sưu tập
+    "BỘ SƯU TẬP": "LIBRARY",
+    "Con trỏ của EzCursor và bộ Bibata. Bấm vào con trỏ muốn dùng.": "EzCursor's own cursors and the Bibata set. Click a cursor to use it.",
+    "Không tìm thấy thư mục bibata đi kèm phần mềm.": "The bundled bibata folder was not found.",
+    "CHỦ ĐỀ": "THEME", "Tùy chỉnh": "Custom", "MÀU TÙY CHỈNH": "CUSTOM COLOR",
+    "Modern · bo tròn": "Modern · rounded", "Original · góc nhọn": "Original · sharp",
+    "Thuận tay phải": "Right-handed", "Thuận tay trái": "Left-handed",
+    "Chọn một màu để chuyển sang chủ đề Tùy chỉnh.": "Pick a color to switch to the Custom theme.",
+    "Chọn màu": "Choose color", "Mảnh hồng": "Pink Shard",
+    "Mũi tên ngược": "Reverse arrow", "Mũi tên đứng": "Upright arrow", "Bàn tay chỉ": "Pointing hand",
+    "Bàn tay mở": "Open hand", "Nắm tay": "Grabbing", "Tâm ngắm": "Crosshair", "Thập mảnh": "Thin cross",
+    "Dấu cộng": "Plus", "Ô chấm": "Dot box", "Dấu X": "X", "Bút chì": "Pencil",
+    # Tab Hiệu ứng
+    "HIỆU ỨNG": "EFFECTS",
+    "Thêm vệt sáng theo con trỏ và hiệu ứng khi click trong game.": "Add a glowing trail behind the cursor and click effects in game.",
+    "VỆT THEO CON TRỎ": "CURSOR TRAIL", "KHI CLICK CHUỘT TRÁI": "ON LEFT CLICK", "QUANH CON TRỎ": "AROUND CURSOR",
+    "Tắt": "Off", "Lấp lánh": "Sparkle", "Vệt neon": "Neon trail", "Cầu vồng": "Rainbow",
+    "Bóng mờ": "Ghost", "Bong bóng": "Bubbles", "Gợn sóng": "Ripple", "Pháo hoa": "Fireworks",
+    "Theo màu con trỏ": "Match cursor color", "Ba màu EzCursor": "EzCursor tri-color",
+    "Ít": "Low", "Vừa": "Medium", "Nhiều": "High", "Màu hiệu ứng": "Effect color", "Mật độ": "Density",
+    "THỬ NGAY TRÊN MÀN HÌNH": "TRY IT ON SCREEN", "ĐANG THỬ...": "TESTING...",
+    "   Di chuột và click trong 8 giây để xem hiệu ứng.": "   Move and click the mouse for 8 seconds to see the effects.",
+    "Hãy chọn ít nhất một hiệu ứng trước khi thử.": "Please select at least one effect before testing.",
+    # Tab Ứng dụng
+    "ỨNG DỤNG": "APPS",
+    "Chọn game sẽ dùng con trỏ của EzCursor, rồi bấm Áp dụng.": "Select the games that will use the EzCursor cursor, then click Apply.",
+    "Làm mới": "Refresh", "  Áp dụng cho mọi ứng dụng (kể cả Desktop)": "  Apply to all apps (including Desktop)",
+    "ÁP DỤNG": "APPLY", "(đang không chạy)": "(not running)", " ĐANG CHẠY ": " RUNNING ",
+    " KHÔNG CHẠY ": " NOT RUNNING ", "Đang áp dụng cho: ": "Applied to: ",
+    "Chưa chọn ứng dụng nào.": "No apps selected.", "✓ Đã áp dụng.  ": "✓ Applied.  ",
+    # Tab Tùy chọn
+    "TÙY CHỌN": "OPTIONS", "Cài đặt chung, cập nhật và phím tắt.": "General settings, updates and hotkeys.",
+    "Ngôn ngữ": "Language", "Ngôn ngữ hiển thị của EzCursor.": "Display language of EzCursor.",
+    "Ẩn con trỏ thật của game": "Hide the game's real cursor",
+    "Chỉ hiện con trỏ của EzCursor khi đang ở trong game.": "Show only the EzCursor cursor while in game.",
+    "Khởi động cùng Windows": "Start with Windows",
+    "Chạy ngầm dưới khay hệ thống khi bật máy.": "Run in the system tray when your PC starts.",
+    "Tự động kiểm tra cập nhật": "Check for updates automatically",
+    "Thông báo khi có phiên bản mới trên GitHub.": "Notify when a new version is on GitHub.",
+    "Màn hình chào khi mở": "Splash screen on launch",
+    "Hiện logo động khoảng 2 giây mỗi lần mở EzCursor.": "Show the animated logo for about 2 seconds at launch.",
+    "Phiên bản ": "Version ", "Khôi phục cài đặt gốc": "Reset to defaults",
+    "Xóa mọi lựa chọn đã lưu và khởi động lại EzCursor như mới cài.": "Clear all saved settings and restart EzCursor as freshly installed.",
+    "Khôi phục": "Reset", "PHÍM TẮT": "HOTKEYS", "Bật / tắt": "On / off", "Đổi hình dạng": "Change shape",
+    "Đổi màu": "Change color",
+    # Trạng thái
+    "●  ĐANG TẮT": "●  OFF", "Con trỏ gốc đang được dùng.": "The default cursor is in use.",
+    "Áp dụng cho mọi ứng dụng.": "Applied to all apps.", "Trong game: ": "In game: ",
+    "●  ĐANG HOẠT ĐỘNG": "●  ACTIVE", "●  TẠM DỪNG": "●  PAUSED",
+    "Đang ở trên giao diện của Windows.": "Over a Windows interface.",
+    "●  CHƯA CHỌN GAME": "●  NO GAME SELECTED", "Vào tab Ứng dụng để chọn game.": "Go to the Apps tab to pick a game.",
+    "●  ĐANG CHỜ GAME": "●  WAITING FOR GAME", "Chờ: ": "Waiting: ",
+    # Hộp thoại & thông báo
+    "Lỗi": "Error", "Không thay đổi được cài đặt khởi động:": "Could not change the startup setting:",
+    "Chọn ảnh con trỏ": "Choose a cursor image", "Tất cả": "All files",
+    "Không sao chép được ảnh:": "Could not copy the image:", "Không mở được ảnh:": "Could not open the image:",
+    "EzCursor vẫn đang chạy dưới khay hệ thống. Chuột phải vào icon để mở lại hoặc thoát.":
+        "EzCursor is still running in the system tray. Right-click the icon to reopen or quit.",
+    "Khôi phục toàn bộ cài đặt về mặc định?\n\nDanh sách game, con trỏ, hiệu ứng và ảnh đã tải lên sẽ bị xóa. EzCursor sẽ tự khởi động lại.":
+        "Reset all settings to defaults?\n\nYour game list, cursor, effects and uploaded image will be removed. EzCursor will restart automatically.",
+    "Chưa cấu hình GITHUB_REPO trong mã nguồn.": "GITHUB_REPO is not configured in the source code.",
+    "Đang kiểm tra cập nhật...": "Checking for updates...",
+    "Bạn đang dùng phiên bản mới nhất.": "You are using the latest version.",
+    "Bạn đang dùng phiên bản mới nhất": "You are using the latest version",
+    "Có phiên bản mới: ": "New version available: ",
+    "Đã có EzCursor {v}. Mở EzCursor để cập nhật.": "EzCursor {v} is available. Open EzCursor to update.",
+    "Không kiểm tra được cập nhật.": "Could not check for updates.",
+    "Không kiểm tra được cập nhật.\nHãy kiểm tra kết nối mạng.": "Could not check for updates.\nPlease check your internet connection.",
+    "Đang tải...": "Downloading...",
+    "Đang cài đặt, EzCursor sẽ tự mở lại sau giây lát...": "Installing, EzCursor will reopen in a moment...",
+    "Không chạy được bộ cài:": "Could not run the installer:", "Tải về thất bại.": "Download failed.",
+    "Tải bản cập nhật thất bại:": "Failed to download the update:", "Cập nhật": "Update",
+    "CÓ PHIÊN BẢN MỚI": "NEW VERSION AVAILABLE", "   (bạn đang dùng {v})": "   (you have {v})",
+    "CÓ GÌ MỚI": "WHAT'S NEW", "(không có ghi chú)": "(no release notes)", "CẬP NHẬT NGAY": "UPDATE NOW",
+    "MỞ TRANG TẢI VỀ": "OPEN DOWNLOAD PAGE", "Để sau": "Later", "Bỏ qua phiên bản này": "Skip this version",
+}
+
+
+def T(text):
+    """Dịch chuỗi giao diện sang ngôn ngữ đang chọn (mặc định tiếng Việt)."""
+    if LANG == "en":
+        return TR_EN.get(text, text)
+    return text
 
 
 # ---------------------------------------------------------------- Vẽ
@@ -1177,6 +1285,8 @@ class App:
 
     def __init__(self, start_in_tray):
         self.cfg = load_cfg()
+        global LANG
+        LANG = self.cfg["language"]
         self.enabled = bool(self.cfg["enabled"])
         self.active = False
         self.src_img = None
@@ -1249,12 +1359,12 @@ class App:
             self.ov.after(30, self.show_splash)
 
         menu = pystray.Menu(
-            pystray.MenuItem("Mở EzCursor", lambda i, it: self.q.put("show"), default=True),
-            pystray.MenuItem("Bật con trỏ", lambda i, it: self.q.put("toggle"),
+            pystray.MenuItem(lambda it: T("Mở EzCursor"), lambda i, it: self.q.put("show"), default=True),
+            pystray.MenuItem(lambda it: T("Bật con trỏ"), lambda i, it: self.q.put("toggle"),
                              checked=lambda it: self.enabled),
-            pystray.MenuItem("Kiểm tra cập nhật", lambda i, it: self.q.put("check_update")),
+            pystray.MenuItem(lambda it: T("Kiểm tra cập nhật"), lambda i, it: self.q.put("check_update")),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Thoát", lambda i, it: self.q.put("quit")),
+            pystray.MenuItem(lambda it: T("Thoát"), lambda i, it: self.q.put("quit")),
         )
         self.icon = pystray.Icon(APP_NAME, make_tray_icon(), APP_NAME, menu)
         self.icon.run_detached()
@@ -1268,7 +1378,7 @@ class App:
 
     # ------------------------------------------------------------ Tiện ích giao diện
     def caps(self, parent, text, color=MUTED):
-        return ctk.CTkLabel(parent, text=text, font=self.F.h(11, bold=False), text_color=color)
+        return ctk.CTkLabel(parent, text=T(text), font=self.F.h(11, bold=False), text_color=color)
 
     def card(self, parent, **kw):
         return ctk.CTkFrame(parent, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=14, **kw)
@@ -1279,15 +1389,15 @@ class App:
                              button_color="#FFFFFF", button_hover_color="#FFFFFF", border_color="#3A4152")
 
     def cyan_button(self, parent, text, command, icon=None):
-        return ctk.CTkButton(parent, text=text, command=command, image=icon, compound="left",
+        return ctk.CTkButton(parent, text=T(text), command=command, image=icon, compound="left",
                              height=40, corner_radius=10, border_width=1, border_color=CYAN,
                              fg_color=mix(CARD, CYAN, 0.10), hover_color=mix(CARD, CYAN, 0.22),
                              text_color=CYAN_TEXT, font=self.F.b(13, strong=True))
 
     def header(self, parent, title, sub):
         f = ctk.CTkFrame(parent, fg_color="transparent")
-        ctk.CTkLabel(f, text=title, font=self.F.h(24), text_color=TEXT).pack(anchor="w")
-        ctk.CTkLabel(f, text=sub, font=self.F.b(13), text_color=TEXT2).pack(anchor="w")
+        ctk.CTkLabel(f, text=T(title), font=self.F.h(24), text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(f, text=T(sub), font=self.F.b(13), text_color=TEXT2).pack(anchor="w")
         return f
 
     # ------------------------------------------------------------ Dựng giao diện
@@ -1333,7 +1443,7 @@ class App:
                            ("apps", "Ứng dụng"), ("opts", "Tùy chọn")):
             icons = (ctk.CTkImage(nav_icon(key, "#FFFFFF", 40), size=(20, 20)),
                      ctk.CTkImage(nav_icon(key, TEXT2, 40), size=(20, 20)))
-            b = ctk.CTkButton(sb, text="  " + label, anchor="w", height=46, corner_radius=10,
+            b = ctk.CTkButton(sb, text="  " + T(label), anchor="w", height=46, corner_radius=10,
                               font=self.F.b(14, strong=True), border_width=1,
                               command=lambda k=key: self.show_tab(k))
             b.pack(fill="x", padx=14, pady=3)
@@ -1350,7 +1460,7 @@ class App:
         self.status_sub.pack(anchor="w", padx=14, pady=(6, 8))
         row = ctk.CTkFrame(st, fg_color="transparent")
         row.pack(fill="x", padx=14)
-        ctk.CTkLabel(row, text="Bật EzCursor", font=self.F.b(14, strong=True), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(row, text=T("Bật EzCursor"), font=self.F.b(14, strong=True), text_color=TEXT).pack(side="left")
         self.enabled_var = tk.BooleanVar(value=self.enabled)
         self.switch(row, self.enabled_var, self.on_enabled_switch).pack(side="right")
         ctk.CTkLabel(st, text="Ctrl + Alt + H", font=self.F.m(11), text_color=MUTED).pack(anchor="w", padx=14, pady=(4, 12))
@@ -1388,7 +1498,7 @@ class App:
         grid.grid_columnconfigure((0, 1, 2), weight=1, uniform="s")
         self.shape_buttons = {}
         for i, (shape, label) in enumerate(SHAPE_BUTTONS):
-            b = ctk.CTkButton(grid, text=label, height=38, width=10, corner_radius=9, border_width=1,
+            b = ctk.CTkButton(grid, text=T(label), height=38, width=10, corner_radius=9, border_width=1,
                               font=self.F.b(13, strong=True), command=lambda s=shape: self.set_shape(s))
             b.grid(row=i // 3, column=i % 3, sticky="ew", padx=3, pady=3)
             self.shape_buttons[shape] = b
@@ -1426,30 +1536,32 @@ class App:
         row.pack(fill="x", pady=(6, 6))
         self.cyan_button(row, "Tải ảnh lên", self.upload_image,
                          ctk.CTkImage(simple_icon("upload", CYAN_TEXT, 32), size=(16, 16))).pack(side="left")
-        self.img_label = ctk.CTkLabel(row, text="(chưa có ảnh)", font=self.F.m(12), text_color=TEXT2)
+        self.img_label = ctk.CTkLabel(row, text=T("(chưa có ảnh)"), font=self.F.m(12), text_color=TEXT2)
         self.img_label.pack(side="left", padx=10)
         if self.cfg["image"] and self.src_img is not None:
             self.img_label.configure(text=Path(self.cfg["image"]).name)
 
         row = ctk.CTkFrame(inner, fg_color="transparent")
         row.pack(fill="x", pady=(2, 6))
-        ctk.CTkLabel(row, text="Điểm click", font=self.F.b(13), text_color=TEXT).pack(side="left")
-        self.hot_seg = ctk.CTkSegmentedButton(row, values=HOTSPOTS, command=self.set_hotspot, height=30,
+        ctk.CTkLabel(row, text=T("Điểm click"), font=self.F.b(13), text_color=TEXT).pack(side="left")
+        self.hot_map = {T(h): h for h in HOTSPOTS}
+        self.hot_seg = ctk.CTkSegmentedButton(row, values=list(self.hot_map),
+                                              command=lambda v: self.set_hotspot(self.hot_map[v]), height=30,
                                               font=self.F.b(12), fg_color=FIELD, unselected_color=FIELD,
                                               unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
                                               selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
-        self.hot_seg.set(self.cfg["hotspot"])
+        self.hot_seg.set(T(self.cfg["hotspot"]))
         self.hot_seg.pack(side="right")
 
         row = ctk.CTkFrame(inner, fg_color="transparent")
         row.pack(fill="x", pady=(2, 0))
-        ctk.CTkLabel(row, text="Tô màu cho ảnh tải lên", font=self.F.b(13), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(row, text=T("Tô màu cho ảnh tải lên"), font=self.F.b(13), text_color=TEXT).pack(side="left")
         self.tint_var = tk.BooleanVar(value=self.cfg["tint_image"])
         self.switch(row, self.tint_var, self.set_tint).pack(side="right")
 
         row = ctk.CTkFrame(inner, fg_color="transparent")
         row.pack(fill="x", pady=(8, 0))
-        ctk.CTkLabel(row, text="Quầng sáng quanh con trỏ", font=self.F.b(13), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(row, text=T("Quầng sáng quanh con trỏ"), font=self.F.b(13), text_color=TEXT).pack(side="left")
         self.glow_var = tk.BooleanVar(value=self.cfg["glow"])
         self.switch(row, self.glow_var, self.set_glow).pack(side="right")
         return page
@@ -1480,7 +1592,7 @@ class App:
             anchor="w", pady=(0, 14))
         self.bib_tiles = {}
         if not BIBATA_DIR.exists():
-            ctk.CTkLabel(page, text="Không tìm thấy thư mục bibata đi kèm phần mềm.", font=self.F.b(13),
+            ctk.CTkLabel(page, text=T("Không tìm thấy thư mục bibata đi kèm phần mềm."), font=self.F.b(13),
                          text_color=AMBER).pack(anchor="w")
             return page
 
@@ -1490,7 +1602,7 @@ class App:
         chips = ctk.CTkFrame(top, fg_color="transparent")
         chips.pack(fill="x", pady=(6, 12))
         self.theme_buttons = {}
-        themes = [(k, v[0], v[1]) for k, v in BIBATA_THEMES.items()] + [("custom", "Tùy chỉnh", None)]
+        themes = [(k, v[0], v[1]) for k, v in BIBATA_THEMES.items()] + [("custom", T("Tùy chỉnh"), None)]
         for key, label, col in themes:
             b = ctk.CTkButton(chips, text=label, height=40, width=118, corner_radius=10, border_width=1,
                               font=self.F.b(13, strong=True), compound="left",
@@ -1525,8 +1637,8 @@ class App:
         seg_kw = dict(height=34, font=self.F.b(12, strong=True), fg_color=FIELD, unselected_color=FIELD,
                       unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
                       selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
-        self.style_map = {"Modern · bo tròn": "modern", "Original · góc nhọn": "original"}
-        self.hand_map = {"Thuận tay phải": "right", "Thuận tay trái": "left"}
+        self.style_map = {T("Modern · bo tròn"): "modern", T("Original · góc nhọn"): "original"}
+        self.hand_map = {T("Thuận tay phải"): "right", T("Thuận tay trái"): "left"}
         self.style_seg = ctk.CTkSegmentedButton(opts, values=list(self.style_map),
                                                 command=lambda v: self.set_bib("bibata_style", self.style_map[v]), **seg_kw)
         self.style_seg.pack(side="left")
@@ -1535,8 +1647,8 @@ class App:
         self.hand_seg.pack(side="right")
         inv_style = {v: k for k, v in self.style_map.items()}
         inv_hand = {v: k for k, v in self.hand_map.items()}
-        self.style_seg.set(inv_style.get(self.cfg["bibata_style"], "Modern · bo tròn"))
-        self.hand_seg.set(inv_hand.get(self.cfg["bibata_hand"], "Thuận tay phải"))
+        self.style_seg.set(inv_style.get(self.cfg["bibata_style"], T("Modern · bo tròn")))
+        self.hand_seg.set(inv_hand.get(self.cfg["bibata_hand"], T("Thuận tay phải")))
 
         grid = self.card(page)
         grid.pack(fill="both", expand=True)
@@ -1550,7 +1662,7 @@ class App:
             img = own_image(shape)
             if img is None:
                 continue
-            b = ctk.CTkButton(inner, text=label, compound="top", height=94, width=10, corner_radius=12,
+            b = ctk.CTkButton(inner, text=T(label), compound="top", height=94, width=10, corner_radius=12,
                               border_width=1, font=self.F.b(12, strong=True),
                               image=ctk.CTkImage(img.resize((112, 112), Image.LANCZOS), size=(56, 56)),
                               command=lambda sh=shape: self.pick_own(sh))
@@ -1560,14 +1672,14 @@ class App:
         offset = len(self.own_tiles)
         for i, (name, label) in enumerate(BIBATA_CURSORS):
             i += offset
-            b = ctk.CTkButton(inner, text=label, compound="top", height=94, width=10, corner_radius=12, border_width=1,
+            b = ctk.CTkButton(inner, text=T(label), compound="top", height=94, width=10, corner_radius=12, border_width=1,
                               font=self.F.b(12), command=lambda n=name: self.pick_bibata(n))
             b.grid(row=i // cols, column=i % cols, sticky="ew", padx=4, pady=4)
             self.bib_tiles[name] = b
 
         foot = ctk.CTkFrame(page, fg_color="transparent")
         foot.pack(fill="x", pady=(10, 0))
-        ctk.CTkLabel(foot, text="Chọn một màu để chuyển sang chủ đề Tùy chỉnh.", font=self.F.b(12),
+        ctk.CTkLabel(foot, text=T("Chọn một màu để chuyển sang chủ đề Tùy chỉnh."), font=self.F.b(12),
                      text_color=TEXT2).pack(side="left")
         link = ctk.CTkLabel(foot, text="Bibata © Abdulkaiz Khatri · GPL-3.0", font=self.F.b(12),
                             text_color=CYAN_TEXT, cursor="hand2")
@@ -1584,7 +1696,7 @@ class App:
         self.refresh()
 
     def pick_bib_color(self):
-        res = colorchooser.askcolor(color=self.cfg["color"], parent=self.win, title="Chọn màu")
+        res = colorchooser.askcolor(color=self.cfg["color"], parent=self.win, title=T("Chọn màu"))
         if res and res[1]:
             self.set_bib_color(res[1])
 
@@ -1666,7 +1778,7 @@ class App:
             for i in range(6):
                 grid.grid_columnconfigure(i, weight=1, uniform="fx")
             for i, (val, label) in enumerate(options):
-                b = ctk.CTkButton(grid, text=label, compound="top", height=84, width=10, corner_radius=12, border_width=1,
+                b = ctk.CTkButton(grid, text=T(label), compound="top", height=84, width=10, corner_radius=12, border_width=1,
                                   image=ctk.CTkImage(fx_icon(val, 96), size=(42, 42)), font=self.F.b(12),
                                   command=lambda v=val, k=key: self.set_fx(k, v))
                 b.grid(row=0, column=i, sticky="ew", padx=4)
@@ -1687,7 +1799,7 @@ class App:
         for start, options, key in groups:
             for i, (val, label) in enumerate(options):
                 icon = val if isinstance(val, str) else ("aura" if val else "off")
-                b = ctk.CTkButton(grid, text=label, compound="top", height=84, width=10, corner_radius=12,
+                b = ctk.CTkButton(grid, text=T(label), compound="top", height=84, width=10, corner_radius=12,
                                   border_width=1, image=ctk.CTkImage(fx_icon(icon, 96), size=(40, 40)),
                                   font=self.F.b(12), command=lambda v=val, k=key: self.set_fx(k, v))
                 b.grid(row=1, column=start + i, sticky="ew", padx=4)
@@ -1698,33 +1810,33 @@ class App:
         seg_kw = dict(height=32, font=self.F.b(12, strong=True), fg_color=FIELD, unselected_color=FIELD,
                       unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
                       selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
-        self.fx_color_map = {"Theo màu con trỏ": "cursor", "Ba màu EzCursor": "ez"}
-        self.fx_dens_map = {"Ít": "low", "Vừa": "mid", "Nhiều": "high"}
+        self.fx_color_map = {T("Theo màu con trỏ"): "cursor", T("Ba màu EzCursor"): "ez"}
+        self.fx_dens_map = {T("Ít"): "low", T("Vừa"): "mid", T("Nhiều"): "high"}
         row = ctk.CTkFrame(opt, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(12, 6))
-        ctk.CTkLabel(row, text="Màu hiệu ứng", font=self.F.b(13), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(row, text=T("Màu hiệu ứng"), font=self.F.b(13), text_color=TEXT).pack(side="left")
         self.fx_color_seg = ctk.CTkSegmentedButton(row, values=list(self.fx_color_map),
                                                    command=lambda v: self.set_fx("fx_color", self.fx_color_map[v]), **seg_kw)
         self.fx_color_seg.pack(side="right")
         row = ctk.CTkFrame(opt, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(6, 12))
-        ctk.CTkLabel(row, text="Mật độ", font=self.F.b(13), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(row, text=T("Mật độ"), font=self.F.b(13), text_color=TEXT).pack(side="left")
         self.fx_dens_seg = ctk.CTkSegmentedButton(row, values=list(self.fx_dens_map),
                                                   command=lambda v: self.set_fx("fx_density", self.fx_dens_map[v]), **seg_kw)
         self.fx_dens_seg.pack(side="right")
 
         inv = {v: k for k, v in self.fx_color_map.items()}
-        self.fx_color_seg.set(inv.get(self.cfg["fx_color"], "Theo màu con trỏ"))
+        self.fx_color_seg.set(inv.get(self.cfg["fx_color"], T("Theo màu con trỏ")))
         inv = {v: k for k, v in self.fx_dens_map.items()}
-        self.fx_dens_seg.set(inv.get(self.cfg["fx_density"], "Vừa"))
+        self.fx_dens_seg.set(inv.get(self.cfg["fx_density"], T("Vừa")))
 
         test = ctk.CTkFrame(page, fg_color="transparent")
         test.pack(fill="x", pady=(14, 0))
-        self.fx_test_btn = ctk.CTkButton(test, text="THỬ NGAY TRÊN MÀN HÌNH", command=self.fx_test, height=44,
+        self.fx_test_btn = ctk.CTkButton(test, text=T("THỬ NGAY TRÊN MÀN HÌNH"), command=self.fx_test, height=44,
                                          width=240, corner_radius=10, fg_color=ACCENT,
                                          hover_color=mix(ACCENT, "#FFFFFF", 0.15), font=self.F.h(14))
         self.fx_test_btn.pack(side="left")
-        ctk.CTkLabel(test, text="   Di chuột và click trong 8 giây để xem hiệu ứng.", font=self.F.b(12),
+        ctk.CTkLabel(test, text=T("   Di chuột và click trong 8 giây để xem hiệu ứng."), font=self.F.b(12),
                      text_color=TEXT2).pack(side="left")
         return page
 
@@ -1747,11 +1859,11 @@ class App:
 
     def fx_test(self):
         if self.cfg["fx_trail"] == "off" and self.cfg["fx_click"] == "off":
-            messagebox.showinfo(APP_NAME, "Hãy chọn ít nhất một hiệu ứng trước khi thử.", parent=self.win)
+            messagebox.showinfo(APP_NAME, T("Hãy chọn ít nhất một hiệu ứng trước khi thử."), parent=self.win)
             return
         self.fx_test_until = time.perf_counter() + 8
-        self.fx_test_btn.configure(text="ĐANG THỬ...", state="disabled")
-        self.win.after(8000, lambda: self.fx_test_btn.configure(text="THỬ NGAY TRÊN MÀN HÌNH", state="normal"))
+        self.fx_test_btn.configure(text=T("ĐANG THỬ..."), state="disabled")
+        self.win.after(8000, lambda: self.fx_test_btn.configure(text=T("THỬ NGAY TRÊN MÀN HÌNH"), state="normal"))
 
     def fx_palette(self):
         if self.cfg["fx_color"] == "ez":
@@ -1816,9 +1928,9 @@ class App:
         bottom.pack(fill="x", pady=(14, 0))
         self.all_var = tk.BooleanVar(value=self.cfg["all_apps"])
         self.switch(bottom, self.all_var, self.set_all_apps).pack(side="left")
-        ctk.CTkLabel(bottom, text="  Áp dụng cho mọi ứng dụng (kể cả Desktop)", font=self.F.b(13),
+        ctk.CTkLabel(bottom, text=T("  Áp dụng cho mọi ứng dụng (kể cả Desktop)"), font=self.F.b(13),
                      text_color=TEXT).pack(side="left")
-        ctk.CTkButton(bottom, text="ÁP DỤNG", command=self.apply_apps, height=44, width=150, corner_radius=10,
+        ctk.CTkButton(bottom, text=T("ÁP DỤNG"), command=self.apply_apps, height=44, width=150, corner_radius=10,
                       fg_color=ACCENT, hover_color=mix(ACCENT, "#FFFFFF", 0.15), text_color="#FFFFFF",
                       font=self.F.h(15)).pack(side="right")
         self.applied_label = ctk.CTkLabel(page, text="", font=self.F.b(12), text_color=TEXT2, anchor="w",
@@ -1829,10 +1941,28 @@ class App:
 
     def build_options_tab(self, parent):
         page = ctk.CTkFrame(parent, fg_color="transparent")
-        self.header(page, "TÙY CHỌN", "Cài đặt chung, cập nhật và phím tắt.").pack(anchor="w", pady=(0, 16))
+        self.header(page, "TÙY CHỌN", "Cài đặt chung, cập nhật và phím tắt.").pack(anchor="w", pady=(0, 12))
 
         box = self.card(page)
         box.pack(fill="x")
+
+        r = ctk.CTkFrame(box, fg_color="transparent")
+        r.pack(fill="x", padx=18, pady=(7, 0))
+        t = ctk.CTkFrame(r, fg_color="transparent")
+        t.pack(side="left")
+        ctk.CTkLabel(t, text=T("Ngôn ngữ"), font=self.F.b(14, strong=True), text_color=TEXT, height=20).pack(anchor="w")
+        ctk.CTkLabel(t, text=T("Ngôn ngữ hiển thị của EzCursor."), font=self.F.b(12), text_color=TEXT2,
+                     height=18).pack(anchor="w")
+        self.lang_map = {name: code for code, name in LANGUAGES}
+        self.lang_seg = ctk.CTkSegmentedButton(
+            r, values=list(self.lang_map), command=lambda v: self.set_language(self.lang_map[v]), height=32,
+            font=self.F.b(12, strong=True), fg_color=FIELD, unselected_color=FIELD,
+            unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
+            selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
+        self.lang_seg.set(dict(LANGUAGES)[self.cfg["language"]])
+        self.lang_seg.pack(side="right")
+        ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(7, 0))
+
         self.hide_var = tk.BooleanVar(value=self.cfg["hide_real"])
         self.startup_var = tk.BooleanVar(value=is_startup_enabled())
         self.auto_upd_var = tk.BooleanVar(value=self.cfg["auto_check_update"])
@@ -1847,13 +1977,13 @@ class App:
                  self.splash_var, self.set_splash)]
         for title, sub, var, cmd in rows:
             r = ctk.CTkFrame(box, fg_color="transparent")
-            r.pack(fill="x", padx=18, pady=(10, 0))
+            r.pack(fill="x", padx=18, pady=(7, 0))
             t = ctk.CTkFrame(r, fg_color="transparent")
             t.pack(side="left")
-            ctk.CTkLabel(t, text=title, font=self.F.b(14, strong=True), text_color=TEXT, height=20).pack(anchor="w")
-            ctk.CTkLabel(t, text=sub, font=self.F.b(12), text_color=TEXT2, height=18).pack(anchor="w")
+            ctk.CTkLabel(t, text=T(title), font=self.F.b(14, strong=True), text_color=TEXT, height=20).pack(anchor="w")
+            ctk.CTkLabel(t, text=T(sub), font=self.F.b(12), text_color=TEXT2, height=18).pack(anchor="w")
             self.switch(r, var, cmd).pack(side="right")
-            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(10, 0))
+            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(7, 0))
 
         r = ctk.CTkFrame(box, fg_color="transparent")
         r.pack(fill="x", padx=18, pady=12)
@@ -1861,7 +1991,7 @@ class App:
         t.pack(side="left")
         v = ctk.CTkFrame(t, fg_color="transparent")
         v.pack(anchor="w")
-        ctk.CTkLabel(v, text="Phiên bản ", font=self.F.b(14, strong=True), text_color=TEXT, height=20).pack(side="left")
+        ctk.CTkLabel(v, text=T("Phiên bản "), font=self.F.b(14, strong=True), text_color=TEXT, height=20).pack(side="left")
         ctk.CTkLabel(v, text=APP_VERSION, font=self.F.m(13), text_color=ACCENT, height=20).pack(side="left")
         self.upd_label = ctk.CTkLabel(t, text="", font=self.F.b(12), text_color=TEXT2, height=18)
         self.upd_label.pack(anchor="w")
@@ -1871,17 +2001,17 @@ class App:
         r.pack(fill="x", padx=18, pady=(0, 12))
         t = ctk.CTkFrame(r, fg_color="transparent")
         t.pack(side="left")
-        ctk.CTkLabel(t, text="Khôi phục cài đặt gốc", font=self.F.b(14, strong=True), text_color=TEXT,
+        ctk.CTkLabel(t, text=T("Khôi phục cài đặt gốc"), font=self.F.b(14, strong=True), text_color=TEXT,
                      height=20).pack(anchor="w")
-        ctk.CTkLabel(t, text="Xóa mọi lựa chọn đã lưu và khởi động lại EzCursor như mới cài.",
+        ctk.CTkLabel(t, text=T("Xóa mọi lựa chọn đã lưu và khởi động lại EzCursor như mới cài."),
                      font=self.F.b(12), text_color=TEXT2, height=18).pack(anchor="w")
-        ctk.CTkButton(r, text="Khôi phục", command=self.reset_settings, height=40, width=120, corner_radius=10,
+        ctk.CTkButton(r, text=T("Khôi phục"), command=self.reset_settings, height=40, width=120, corner_radius=10,
                       border_width=1, border_color="#FF5A5A", fg_color=mix(CARD, "#FF5A5A", 0.10),
                       hover_color=mix(CARD, "#FF5A5A", 0.22), text_color="#FF8A8A",
                       font=self.F.b(13, strong=True)).pack(side="right")
 
         hk = self.card(page)
-        hk.pack(fill="x", pady=(16, 0))
+        hk.pack(fill="x", pady=(12, 0))
         self.caps(hk, "PHÍM TẮT").pack(anchor="w", padx=16, pady=(12, 6))
         grid = ctk.CTkFrame(hk, fg_color="transparent")
         grid.pack(fill="x", padx=12, pady=(0, 12))
@@ -1890,7 +2020,7 @@ class App:
         for i, (desc, k) in enumerate(keys):
             cell = ctk.CTkFrame(grid, fg_color=FIELD, border_color=LINE, border_width=1, corner_radius=10)
             cell.grid(row=i // 2, column=i % 2, sticky="ew", padx=4, pady=4)
-            ctk.CTkLabel(cell, text=desc, font=self.F.b(13), text_color="#C9CFDB").pack(side="left", padx=12, pady=10)
+            ctk.CTkLabel(cell, text=T(desc), font=self.F.b(13), text_color="#C9CFDB").pack(side="left", padx=12, pady=10)
             caps = ctk.CTkFrame(cell, fg_color="transparent")
             caps.pack(side="right", padx=10)
             for key in ("Ctrl", "Alt", k):
@@ -1928,15 +2058,15 @@ class App:
 
     def status_info(self):
         if not self.enabled:
-            return "●  ĐANG TẮT", MUTED, "Con trỏ gốc đang được dùng."
+            return T("●  ĐANG TẮT"), MUTED, T("Con trỏ gốc đang được dùng.")
         if self.active:
-            sub = "Áp dụng cho mọi ứng dụng." if self.cfg["all_apps"] else f"Trong game: {self.fg_exe}"
-            return "●  ĐANG HOẠT ĐỘNG", GREEN, sub
+            sub = T("Áp dụng cho mọi ứng dụng.") if self.cfg["all_apps"] else T("Trong game: ") + self.fg_exe
+            return T("●  ĐANG HOẠT ĐỘNG"), GREEN, sub
         if self.shell_open:
-            return "●  TẠM DỪNG", AMBER, "Đang ở trên giao diện của Windows."
+            return T("●  TẠM DỪNG"), AMBER, T("Đang ở trên giao diện của Windows.")
         if not self.cfg["apps"]:
-            return "●  CHƯA CHỌN GAME", AMBER, "Vào tab Ứng dụng để chọn game."
-        return "●  ĐANG CHỜ GAME", AMBER, "Chờ: " + ", ".join(self.cfg["apps"])
+            return T("●  CHƯA CHỌN GAME"), AMBER, T("Vào tab Ứng dụng để chọn game.")
+        return T("●  ĐANG CHỜ GAME"), AMBER, T("Chờ: ") + ", ".join(self.cfg["apps"])
 
     def update_status(self, blink=False):
         text, col, sub = self.status_info()
@@ -2105,7 +2235,7 @@ class App:
         running = list_running_apps()
         running_names = {n.lower() for n, _ in running}
         items = [(n, t, True) for n, t in running]
-        items += [(n, "(đang không chạy)", False) for n in self.cfg["apps"] if n.lower() not in running_names]
+        items += [(n, T("(đang không chạy)"), False) for n in self.cfg["apps"] if n.lower() not in running_names]
         old = {k: v.get() for k, v in self.app_vars.items()}
         for w in self.app_list.winfo_children():
             w.destroy()
@@ -2131,7 +2261,7 @@ class App:
         l2 = ctk.CTkLabel(txt, text=name, font=self.F.m(12), text_color=MUTED, height=16, anchor="w")
         l2.pack(anchor="w")
         badge_col = CYAN_TEXT if running else MUTED
-        badge = ctk.CTkLabel(row, text=" ĐANG CHẠY " if running else " KHÔNG CHẠY ", font=self.F.m(10),
+        badge = ctk.CTkLabel(row, text=T(" ĐANG CHẠY ") if running else T(" KHÔNG CHẠY "), font=self.F.m(10),
                              text_color=badge_col, corner_radius=11, height=22,
                              fg_color=mix(CARD, CYAN, 0.1) if running else "#181C26")
         badge.pack(side="right", padx=12)
@@ -2157,9 +2287,9 @@ class App:
         self.refresh()
 
     def update_applied_label(self, just_applied=False):
-        txt = ("Đang áp dụng cho: " + ", ".join(self.cfg["apps"])) if self.cfg["apps"] else "Chưa chọn ứng dụng nào."
+        txt = (T("Đang áp dụng cho: ") + ", ".join(self.cfg["apps"])) if self.cfg["apps"] else T("Chưa chọn ứng dụng nào.")
         if just_applied:
-            txt = "✓ Đã áp dụng.  " + txt
+            txt = T("✓ Đã áp dụng.  ") + txt
         self.applied_label.configure(text=txt, text_color=CYAN_TEXT if just_applied else TEXT2)
 
     def set_all_apps(self):
@@ -2200,7 +2330,7 @@ class App:
         self.refresh()
 
     def pick_color(self):
-        res = colorchooser.askcolor(color=self.cfg["color"], parent=self.win, title="Chọn màu")
+        res = colorchooser.askcolor(color=self.cfg["color"], parent=self.win, title=T("Chọn màu"))
         if res and res[1]:
             self.set_color(res[1])
 
@@ -2231,20 +2361,20 @@ class App:
         try:
             set_startup(self.startup_var.get())
         except Exception as e:
-            messagebox.showerror("Lỗi", f"Không thay đổi được cài đặt khởi động:\n{e}", parent=self.win)
+            messagebox.showerror(T("Lỗi"), T("Không thay đổi được cài đặt khởi động:") + f"\n{e}", parent=self.win)
             self.startup_var.set(is_startup_enabled())
 
     def upload_image(self):
         path = filedialog.askopenfilename(
-            parent=self.win, title="Chọn ảnh con trỏ",
-            filetypes=[("Ảnh", "*.png *.gif *.webp *.ico *.bmp *.jpg *.jpeg"), ("Tất cả", "*.*")])
+            parent=self.win, title=T("Chọn ảnh con trỏ"),
+            filetypes=[(T("Ảnh"), "*.png *.gif *.webp *.ico *.bmp *.jpg *.jpeg"), (T("Tất cả"), "*.*")])
         if not path:
             return
         dest = APP_DIR / ("custom" + Path(path).suffix.lower())
         try:
             shutil.copyfile(path, dest)
         except Exception as e:
-            messagebox.showerror("Lỗi", f"Không sao chép được ảnh:\n{e}", parent=self.win)
+            messagebox.showerror(T("Lỗi"), T("Không sao chép được ảnh:") + f"\n{e}", parent=self.win)
             return
         if self.load_image(str(dest)):
             self.cfg["image"] = str(dest)
@@ -2257,7 +2387,7 @@ class App:
         except Exception as e:
             self.src_img = None
             if not silent:
-                messagebox.showerror("Lỗi", f"Không mở được ảnh:\n{e}", parent=self.win)
+                messagebox.showerror(T("Lỗi"), T("Không mở được ảnh:") + f"\n{e}", parent=self.win)
             return False
         return True
 
@@ -2272,8 +2402,8 @@ class App:
             self.cfg["tray_hint_shown"] = True
             self.save()
             try:
-                self.icon.notify("EzCursor vẫn đang chạy dưới khay hệ thống. "
-                                 "Chuột phải vào icon để mở lại hoặc thoát.", APP_NAME)
+                self.icon.notify(T("EzCursor vẫn đang chạy dưới khay hệ thống. "
+                                   "Chuột phải vào icon để mở lại hoặc thoát."), APP_NAME)
             except Exception:
                 pass
 
@@ -2323,9 +2453,9 @@ class App:
 
     # ------------------------------------------------------------ Cập nhật
     def reset_settings(self):
-        if not messagebox.askyesno(APP_NAME, "Khôi phục toàn bộ cài đặt về mặc định?\n\n"
-                                   "Danh sách game, con trỏ, hiệu ứng và ảnh đã tải lên sẽ bị xóa. "
-                                   "EzCursor sẽ tự khởi động lại.", parent=self.win):
+        if not messagebox.askyesno(APP_NAME, T("Khôi phục toàn bộ cài đặt về mặc định?\n\n"
+                                     "Danh sách game, con trỏ, hiệu ứng và ảnh đã tải lên sẽ bị xóa. "
+                                     "EzCursor sẽ tự khởi động lại."), parent=self.win):
             return
         for f in APP_DIR.glob("custom.*"):
             try:
@@ -2345,6 +2475,29 @@ class App:
         subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & start "" {args}',
                          shell=True, creationflags=0x08000000)
         self.quit()
+
+    def set_language(self, code):
+        """Đổi ngôn ngữ giao diện và dựng lại toàn bộ giao diện ngay, không cần khởi động lại."""
+        global LANG
+        if code == self.cfg["language"]:
+            return
+        self.cfg["language"] = code
+        LANG = code
+        self.save()
+        self.win.after(20, self.rebuild_ui)
+
+    def rebuild_ui(self):
+        tab = self.tab
+        for w in self.win.winfo_children():
+            w.destroy()
+        self.build_ui()
+        self.refresh_apps()
+        self.refresh()
+        self.show_tab(tab)
+        try:
+            self.icon.update_menu()
+        except Exception:
+            pass
 
     def set_splash(self):
         self.cfg["splash"] = bool(self.splash_var.get())
@@ -2415,12 +2568,12 @@ class App:
     def check_update(self, manual):
         if not update_configured():
             if manual:
-                messagebox.showinfo(APP_NAME, "Chưa cấu hình GITHUB_REPO trong mã nguồn.", parent=self.win)
+                messagebox.showinfo(APP_NAME, T("Chưa cấu hình GITHUB_REPO trong mã nguồn."), parent=self.win)
             return
         if self.checking_update:
             return
         self.checking_update = True
-        self.upd_label.configure(text="Đang kiểm tra cập nhật...")
+        self.upd_label.configure(text=T("Đang kiểm tra cập nhật..."))
 
         def work():
             try:
@@ -2436,47 +2589,47 @@ class App:
             self.save()
             info = data
             if parse_version(info["version"]) <= parse_version(APP_VERSION):
-                self.upd_label.configure(text="Bạn đang dùng phiên bản mới nhất.")
+                self.upd_label.configure(text=T("Bạn đang dùng phiên bản mới nhất."))
                 if manual:
-                    messagebox.showinfo(APP_NAME, f"Bạn đang dùng phiên bản mới nhất ({APP_VERSION}).",
+                    messagebox.showinfo(APP_NAME, T("Bạn đang dùng phiên bản mới nhất") + f" ({APP_VERSION}).",
                                         parent=self.win)
                 return
-            self.upd_label.configure(text=f"Có phiên bản mới: {info['version']}", text_color=ACCENT)
+            self.upd_label.configure(text=T("Có phiên bản mới: ") + info["version"], text_color=ACCENT)
             if not manual and info["version"] == self.cfg["skipped_version"]:
                 return
             if self.win.state() == "withdrawn":
                 self.pending_update = info
                 try:
-                    self.icon.notify(f"Đã có EzCursor {info['version']}. Mở EzCursor để cập nhật.", APP_NAME)
+                    self.icon.notify(T("Đã có EzCursor {v}. Mở EzCursor để cập nhật.").format(v=info["version"]), APP_NAME)
                 except Exception:
                     pass
             else:
                 self.show_update_dialog(info, manual)
         elif kind == "update_error":
             self.checking_update = False
-            self.upd_label.configure(text="Không kiểm tra được cập nhật.")
+            self.upd_label.configure(text=T("Không kiểm tra được cập nhật."))
             if manual:
-                messagebox.showerror(APP_NAME, f"Không kiểm tra được cập nhật.\nHãy kiểm tra kết nối mạng.\n\n{data}",
+                messagebox.showerror(APP_NAME, T("Không kiểm tra được cập nhật.\nHãy kiểm tra kết nối mạng.") + f"\n\n{data}",
                                      parent=self.win)
         elif kind == "dl_progress":
             self.dl_bar.set(data / 100)
-            self.dl_label.configure(text=f"Đang tải... {data:.0f}%")
+            self.dl_label.configure(text=T("Đang tải...") + f" {data:.0f}%")
         elif kind == "dl_done":
-            self.dl_label.configure(text="Đang cài đặt, EzCursor sẽ tự mở lại sau giây lát...")
+            self.dl_label.configure(text=T("Đang cài đặt, EzCursor sẽ tự mở lại sau giây lát..."))
             try:
                 subprocess.Popen([data, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/RELAUNCH"])
             except Exception as e:
-                messagebox.showerror(APP_NAME, f"Không chạy được bộ cài:\n{e}", parent=self.upd_dialog)
+                messagebox.showerror(APP_NAME, T("Không chạy được bộ cài:") + f"\n{e}", parent=self.upd_dialog)
                 return
             self.ov.after(200, self.quit)
         elif kind == "dl_error":
             self.btn_update.configure(state="normal")
-            self.dl_label.configure(text="Tải về thất bại.")
-            messagebox.showerror(APP_NAME, f"Tải bản cập nhật thất bại:\n{data}", parent=self.upd_dialog)
+            self.dl_label.configure(text=T("Tải về thất bại."))
+            messagebox.showerror(APP_NAME, T("Tải bản cập nhật thất bại:") + f"\n{data}", parent=self.upd_dialog)
 
     def show_update_dialog(self, info, manual):
         d = ctk.CTkToplevel(self.ov, fg_color=BG)
-        d.title(f"{APP_NAME} - Cập nhật")
+        d.title(f"{APP_NAME} - " + T("Cập nhật"))
         d.resizable(False, False)
         d.attributes("-topmost", True)
         ico = res_path("ezcursor.ico")
@@ -2490,12 +2643,12 @@ class App:
         title.pack(anchor="w", pady=(2, 10))
         ctk.CTkLabel(title, text="EZCURSOR ", font=self.F.h(22), text_color=TEXT).pack(side="left")
         ctk.CTkLabel(title, text=info["version"], font=self.F.h(22), text_color=ACCENT).pack(side="left")
-        ctk.CTkLabel(title, text=f"   (bạn đang dùng {APP_VERSION})", font=self.F.b(12),
+        ctk.CTkLabel(title, text=T("   (bạn đang dùng {v})").format(v=APP_VERSION), font=self.F.b(12),
                      text_color=TEXT2).pack(side="left")
         self.caps(frm, "CÓ GÌ MỚI").pack(anchor="w")
         tb = ctk.CTkTextbox(frm, width=520, height=200, fg_color=CARD, border_color=BORDER, border_width=1,
                             corner_radius=10, font=self.F.b(13), text_color=TEXT, wrap="word")
-        tb.insert("1.0", info["notes"].strip() or "(không có ghi chú)")
+        tb.insert("1.0", info["notes"].strip() or T("(không có ghi chú)"))
         tb.configure(state="disabled")
         tb.pack(fill="x", pady=(6, 12))
         self.dl_bar = ctk.CTkProgressBar(frm, progress_color=ACCENT, fg_color="#1A1E29", height=8)
@@ -2506,15 +2659,15 @@ class App:
         bf = ctk.CTkFrame(frm, fg_color="transparent")
         bf.pack(fill="x", pady=(8, 0))
         if info["url"]:
-            self.btn_update = ctk.CTkButton(bf, text="CẬP NHẬT NGAY", command=lambda: self.start_download(info),
+            self.btn_update = ctk.CTkButton(bf, text=T("CẬP NHẬT NGAY"), command=lambda: self.start_download(info),
                                             height=42, corner_radius=10, fg_color=ACCENT,
                                             hover_color=mix(ACCENT, "#FFFFFF", 0.15), font=self.F.h(14))
         else:
-            self.btn_update = ctk.CTkButton(bf, text="MỞ TRANG TẢI VỀ", command=lambda: webbrowser.open(info["page"]),
+            self.btn_update = ctk.CTkButton(bf, text=T("MỞ TRANG TẢI VỀ"), command=lambda: webbrowser.open(info["page"]),
                                             height=42, corner_radius=10, fg_color=ACCENT,
                                             hover_color=mix(ACCENT, "#FFFFFF", 0.15), font=self.F.h(14))
         self.btn_update.pack(side="right")
-        ctk.CTkButton(bf, text="Để sau", command=d.destroy, height=42, width=90, corner_radius=10,
+        ctk.CTkButton(bf, text=T("Để sau"), command=d.destroy, height=42, width=90, corner_radius=10,
                       fg_color="transparent", hover_color="#161A23", border_width=1, border_color=BORDER,
                       text_color=TEXT2, font=self.F.b(13, strong=True)).pack(side="right", padx=8)
         if not manual:
@@ -2522,7 +2675,7 @@ class App:
                 self.cfg["skipped_version"] = info["version"]
                 self.save()
                 d.destroy()
-            ctk.CTkButton(bf, text="Bỏ qua phiên bản này", command=skip, height=42, corner_radius=10,
+            ctk.CTkButton(bf, text=T("Bỏ qua phiên bản này"), command=skip, height=42, corner_radius=10,
                           fg_color="transparent", hover_color="#161A23", text_color=MUTED,
                           font=self.F.b(12)).pack(side="left")
         d.after(100, d.lift)
