@@ -6,7 +6,7 @@ EzCursor - con trỏ chuột tùy chỉnh cho game có con trỏ riêng (vd: Las
 - Tab "Ứng dụng": chọn ứng dụng đang chạy để áp dụng con trỏ, bấm Áp dụng
 - Giao diện tiếng Việt / tiếng Anh (tab Tùy chọn > Ngôn ngữ)
 - Bấm X: thu nhỏ xuống khay hệ thống. Thoát hẳn: menu khay hoặc Ctrl+Alt+Q
-Phím tắt: Ctrl+Alt+H bật/tắt, Ctrl+Alt+R đổi hình, Ctrl+Alt+1..5 đổi màu, Ctrl+Alt+Q thoát
+Phím tắt: Ctrl+Alt+H bật/tắt, Ctrl+Alt+R đổi con trỏ, Ctrl+Alt+F tìm con trỏ, Ctrl+Alt+1..5 đổi màu, Ctrl+Alt+Q thoát
 Cài đặt lưu tại %APPDATA%\\EzCursor
 """
 
@@ -14,6 +14,7 @@ import atexit
 import collections.abc
 import colorsys
 import ctypes
+import hashlib
 import io
 import json
 import logging
@@ -23,6 +24,7 @@ import os
 import platform
 import random
 import queue
+import re
 import shutil
 import struct
 import subprocess
@@ -31,6 +33,7 @@ import tempfile
 import threading
 import time
 import traceback
+import urllib.parse
 import urllib.request
 import webbrowser
 import tkinter as tk
@@ -44,7 +47,7 @@ import pystray
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageSequence, ImageTk
 
 APP_NAME = "EzCursor"
-APP_VERSION = "1.9.0"
+APP_VERSION = "2.0.0"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
 GITHUB_REPO = "ezcursor/EzCursor"
@@ -325,6 +328,9 @@ DEFAULT_CFG = {
     "language": "vi",
     "dpi_scale": False,
     "find_shake": True,
+    "catalog_got": {},        # con trỏ đã tải từ kho trực tuyến: {id: tên file trong my_cursors}
+    "setup_done": False,      # đã qua màn hình thiết lập lần đầu
+    "favorites": [],          # con trỏ yêu thích: mã hình, "bib:<tên>" hoặc "my:<tên file>"
     "profiles": [],      # hồ sơ riêng: [{"name": ..., "exes": [...], "style": {...}}]
     "hotkeys": {
         "toggle": {"mods": ["ctrl", "alt"], "vk": 0x48},   # H
@@ -424,6 +430,49 @@ def clean_style(cfg):
     return cfg
 
 
+# Kho con trỏ trực tuyến (2.0): danh sách nằm trên website, thêm con trỏ mới không cần phát hành app
+CATALOG_URL = "https://ezcursor.github.io/catalog/catalog.json"
+CAT_DIR = APP_DIR / "catalog"            # bộ nhớ đệm: danh sách + ảnh nhỏ
+CAT_EXTS = {".cur", ".ani", ".png", ".gif"}
+CAT_MAX = 3 * 1024 * 1024
+
+
+def http_get(url, limit):
+    if not url.startswith("https://") and not url.startswith("http://127.0.0.1"):
+        raise ValueError("URL không hợp lệ")
+    req = urllib.request.Request(url, headers={"User-Agent": f"EzCursor/{APP_VERSION}"})
+    with urllib.request.urlopen(req, timeout=12) as r:
+        data = r.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("File quá lớn")
+    return data
+
+
+def clean_catalog(data):
+    """Chỉ giữ các mục hợp lệ của catalog.json (tên file đơn giản, đúng định dạng, có mã kiểm tra)."""
+    out = []
+    for e in data.get("cursors", []) if isinstance(data, dict) else []:
+        try:
+            cid, f, th = e["id"], e["file"], e["thumb"]
+            ok = (re.fullmatch(r"[a-z0-9_-]{1,40}", cid) and re.fullmatch(r"[A-Za-z0-9_.-]{1,60}", f)
+                  and re.fullmatch(r"[A-Za-z0-9_.-]{1,60}", th) and ".." not in f + th
+                  and Path(f).suffix.lower() in CAT_EXTS and th.lower().endswith(".png")
+                  and re.fullmatch(r"[0-9a-f]{64}", e["sha256"]) and 0 < int(e["size"]) <= CAT_MAX)
+            if not ok:
+                continue
+            name = e.get("name")
+            name = name if isinstance(name, dict) else {"vi": str(name or cid)}
+            out.append({"id": cid, "file": f, "thumb": th, "sha256": e["sha256"], "size": int(e["size"]),
+                        "name": {k: str(v)[:40] for k, v in name.items()}, "added": str(e.get("added", ""))[:10]})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def catalog_name(e):
+    return e["name"].get(LANG) or e["name"].get("vi") or next(iter(e["name"].values()), e["id"])
+
+
 def my_cursor_files():
     """Các con trỏ người dùng đã thêm, mới nhất ở cuối."""
     try:
@@ -465,10 +514,14 @@ def migrate_my_cursors(cfg):
 
 def load_cfg():
     cfg = default_cfg()
+    raw = {}
     try:
-        cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+        raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        cfg.update(raw)
     except Exception:
         pass
+    if not isinstance(raw, dict) or "setup_done" not in raw:     # đã dùng bản cũ thì không cần thiết lập lại
+        cfg["setup_done"] = bool(raw)
     try:
         clean_style(cfg)
     except Exception:
@@ -488,6 +541,10 @@ def load_cfg():
     cfg["profiles"] = profiles
     cfg["dpi_scale"] = bool(cfg.get("dpi_scale"))
     cfg["find_shake"] = bool(cfg.get("find_shake", True))
+    got = cfg.get("catalog_got") if isinstance(cfg.get("catalog_got"), dict) else {}
+    cfg["catalog_got"] = {k: v for k, v in got.items() if isinstance(k, str) and isinstance(v, str)}
+    favs = cfg.get("favorites") if isinstance(cfg.get("favorites"), list) else []
+    cfg["favorites"] = list(dict.fromkeys(f for f in favs if isinstance(f, str) and f))[:60]
     migrate_my_cursors(cfg)
     cfg["hotkeys"] = clean_hotkeys(cfg.get("hotkeys"))
     if cfg["language"] not in dict(LANGUAGES):
@@ -645,6 +702,37 @@ TR_EN = {
     # 1.6.0
     "Đang chỉnh": "Editing", "Mặc định (mọi game)": "Default (all games)",
     # 1.9.0
+    "Đổi con trỏ": "Change cursor", "Hình cơ bản": "Basic shapes", "Con trỏ của bạn": "Your cursors",
+    "(chưa có)": "(none yet)", "Hồ sơ": "Profile", "Áp cho: {n}": "Applies to: {n}",
+    "Yêu thích": "Favorites", "Thêm vào Yêu thích": "Add to favorites", "Bỏ khỏi Yêu thích": "Remove from favorites",
+    "Bấm ☆ để thêm vào Yêu thích. Ctrl+Alt+R sẽ chỉ đổi giữa các con trỏ yêu thích.":
+        "Click ☆ to add a favorite. Ctrl+Alt+R then cycles through your favorites only.",
+    "THIẾT LẬP NHANH": "QUICK SETUP", "Bước {i} / 3": "Step {i} / 3", "Bỏ qua": "Skip", "Quay lại": "Back",
+    "Tiếp tục": "Next", "Bắt đầu": "Let's go",
+    "Bạn chơi game nào?": "Which games do you play?",
+    "EzCursor chỉ hiện con trỏ khi các game này đang mở. Có thể đổi sau ở tab Ứng dụng.":
+        "EzCursor only shows its cursor while these games are open. You can change this later in the Apps tab.",
+    "Chọn con trỏ": "Pick a cursor",
+    "Chọn con trỏ bạn thích. Bộ sưu tập còn bộ Bibata và chỗ thêm con trỏ của riêng bạn.":
+        "Pick the cursor you like. The Library also has the Bibata set and room for your own cursors.",
+    "Nhỏ": "Small", "Vừa": "Medium", "Lớn": "Large",
+    "Sẵn sàng!": "All set!",
+    "Mở game là con trỏ mới sẽ hiện. Vài phím tắt nên nhớ:": "Open your game and the new cursor appears. A few handy hotkeys:",
+    "Đổi con trỏ (giữa các con trỏ yêu thích)": "Change cursor (between favorites)",
+    "Tìm con trỏ (hoặc lắc chuột)": "Find cursor (or shake the mouse)",
+    "EzCursor chạy ở khay hệ thống. Chuột phải vào icon để đổi nhanh con trỏ hoặc hồ sơ.":
+        "EzCursor lives in the system tray. Right-click its icon to quickly change cursor or profile.",
+    "Game": "Games", "Mọi ứng dụng": "All applications", "(chưa chọn)": "(none selected)",
+    "Trực tuyến": "Online", "Làm mới": "Refresh", "Đang tải danh sách…": "Loading the list…",
+    "{n} con trỏ · Bấm để tải về, con trỏ sẽ nằm trong mục Của bạn.":
+        "{n} cursors · Click to download; it will be added to Yours.",
+    "Không kết nối được kho trực tuyến. Kiểm tra mạng rồi bấm Làm mới.":
+        "Couldn't reach the online catalog. Check your connection and click Refresh.",
+    "Đang xem danh sách lưu lần trước (chưa kết nối được).": "Showing the last saved list (offline).",
+    "Tải về": "Download", "Đang tải…": "Downloading…", "✓ Đã có": "✓ Added", "MỚI": "NEW",
+    "Không tải được con trỏ:": "Couldn't download the cursor:",
+    "File không khớp mã kiểm tra": "Checksum mismatch", "File con trỏ bị lỗi": "The cursor file is damaged",
+    "File quá lớn": "File too large",
     "Của bạn": "Yours", "Tô màu": "Tinted", "+ Thêm con trỏ": "+ Add cursor", "Xóa con trỏ này": "Delete this cursor",
     "Xóa con trỏ \"{n}\" khỏi bộ sưu tập?": "Remove the cursor \"{n}\" from your library?",
     "Chưa có con trỏ nào. Bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF hoặc file con trỏ .cur, .ani.":
@@ -1010,6 +1098,21 @@ def _ss(draw_fn, size, scale=4):
     im = Image.new("RGBA", (size * scale, size * scale), (0, 0, 0, 0))
     draw_fn(ImageDraw.Draw(im), scale)
     return im.resize((size, size), Image.LANCZOS)
+
+
+def star_icon(filled, color, size=16):
+    def draw(d, s):
+        k = s * size / 16
+        pts = []
+        for i in range(10):
+            r = (7.2 if i % 2 == 0 else 3.1) * k
+            a = math.pi / 2 + i * math.pi / 5
+            pts.append((8 * k + r * math.cos(a), 8.6 * k - r * math.sin(a)))
+        if filled:
+            d.polygon(pts, fill=color)
+        else:
+            d.line(pts + [pts[0]], fill=color, width=max(1, int(1.4 * k)), joint="curve")
+    return _ss(draw, size)
 
 
 def nav_icon(kind, color, size=20):
@@ -1756,8 +1859,16 @@ class App:
 
     def __init__(self, start_in_tray):
         self.cfg = ProfileCfg(load_cfg())
+        self.mine_sig = 0               # tăng mỗi khi danh sách "Con trỏ của bạn" đổi
         self.edit_profile = None        # hồ sơ đang chỉnh trong giao diện (None = Mặc định)
         self.play_profile = None        # hồ sơ của game đang chơi
+        self.tray_pr = None             # hồ sơ mà menu khay đang áp vào (game chơi gần nhất / hồ sơ chọn gần nhất)
+        self.tray_sig = None
+        self.cat_entries = None         # danh sách kho trực tuyến (None = chưa tải)
+        self.cat_status = ("idle", 0)
+        self.cat_busy = False
+        self.cat_dl = set()             # đang tải về
+        self.cat_thumbs = {}
         self.img_cache = {}
         self.profile_menus = []
         global LANG
@@ -1865,15 +1976,7 @@ class App:
             self.win.after(300, lambda: self.win.withdraw() if self.splashing else None)
             self.ov.after(30, self.show_splash)
 
-        menu = pystray.Menu(
-            pystray.MenuItem(lambda it: T("Mở EzCursor"), lambda i, it: self.q.put("show"), default=True),
-            pystray.MenuItem(lambda it: T("Bật con trỏ"), lambda i, it: self.q.put("toggle"),
-                             checked=lambda it: self.enabled),
-            pystray.MenuItem(lambda it: T("Kiểm tra cập nhật"), lambda i, it: self.q.put("check_update")),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem(lambda it: T("Thoát"), lambda i, it: self.q.put("quit")),
-        )
-        self.icon = pystray.Icon(APP_NAME, make_tray_icon(), APP_NAME, menu)
+        self.icon = pystray.Icon(APP_NAME, make_tray_icon(), APP_NAME, self.build_tray_menu())
         self.icon.run_detached()
 
         self.refresh_apps()
@@ -1882,6 +1985,8 @@ class App:
         self.anim()
         self.fx_loop()
         self.ov.after(5000, self.auto_check_update)
+        if not self.cfg["setup_done"] or "--setup" in sys.argv:
+            self.ov.after(700, self.wait_setup)
 
     # ------------------------------------------------------------ Tiện ích giao diện
     def caps(self, parent, text, color=MUTED):
@@ -1931,6 +2036,116 @@ class App:
         self.profile_menus.append((menu, rm))
         return top
 
+    # ------------------------------------------------------------ Menu khay hệ thống
+    def build_tray_menu(self):
+        """Menu chuột phải ở icon khay. Các mục được dựng lại mỗi lần gọi icon.update_menu()."""
+        M, I = pystray.Menu, pystray.MenuItem
+        put = self.q.put
+
+        def act(cmd):                 # pystray chỉ nhận hàm có tối đa 2 tham số
+            return lambda i, it: put(cmd)
+
+        def shape_item(label, shape):
+            return I(label, act(("tray_shape", shape)),
+                     checked=lambda it: self.cfg["shape"] == shape, radio=True)
+
+        def mine_item(f, cur):
+            return I(f.stem, act(("tray_mine", str(f))),
+                     checked=lambda it: cur is not None and Path(cur) == f, radio=True)
+
+        def profile_item(pr):
+            return I(self.profile_label(pr), act(("tray_profile", None if pr is None else pr["name"])),
+                     checked=lambda it: self.tray_pr is pr, radio=True)
+
+        def own_items():
+            return [shape_item(T(c[1]), c[0]) for c in OWN_CURSORS]
+
+        def basic_items():
+            return [shape_item(T(x), x) for x in ("Mũi tên", "Vòng tròn", "Dấu thập", "Chấm tròn", "Kim cương")]
+
+        def mine_items():
+            files = my_cursor_files()
+            if not files:
+                return [I(T("(chưa có)"), None, enabled=False)]
+            cur = self.cfg["image"] if self.cfg["shape"] == "Ảnh tải lên" else None
+            return [mine_item(f, cur) for f in reversed(files[-20:])]
+
+        def fav_item(fid, cur):
+            return I(self.fav_label(fid), act(("tray_fav", fid)), checked=lambda it: fid == cur, radio=True)
+
+        def cursor_items():
+            yield I(lambda it: T("Áp cho: {n}").format(n=self.profile_label(self.tray_pr)), None,
+                    enabled=False, visible=bool(self.cfg["profiles"]))
+            favs = [f for f in self.cfg["favorites"] if self.fav_valid(f)]
+            if favs:
+                cur = self.current_fav_id()
+                yield I("★ " + T("Yêu thích"), M(*[fav_item(f, cur) for f in favs]))
+            yield I(T("Bộ EzCursor"), M(*own_items()))
+            yield I(T("Hình cơ bản"), M(*basic_items()))
+            yield shape_item("Bibata", "Bibata")
+            yield I(T("Con trỏ của bạn"), M(*mine_items()))
+
+        def profile_items():
+            for pr in [None] + list(self.cfg["profiles"]):
+                yield profile_item(pr)
+
+        def items():
+            yield I(T("Mở EzCursor"), lambda i, it: put("show"), default=True)
+            yield I(T("Bật con trỏ"), lambda i, it: put("toggle"), checked=lambda it: self.enabled)
+            yield M.SEPARATOR
+            yield I(T("Đổi con trỏ"), M(*cursor_items()))
+            if self.cfg["profiles"]:
+                yield I(T("Hồ sơ"), M(*profile_items()))
+            yield M.SEPARATOR
+            yield I(T("Kiểm tra cập nhật"), lambda i, it: put("check_update"))
+            yield I(T("Thoát"), lambda i, it: put("quit"))
+
+        return M(lambda: list(items()))
+
+    def tray_state(self):
+        c = self.cfg
+        return (LANG, self.enabled, c["shape"], c["image"], c["bibata_cursor"], tuple(c["favorites"]), id(self.tray_pr),
+                tuple(pr["name"] for pr in c["profiles"]), self.mine_sig)
+
+    def sync_tray(self, force=False):
+        """Cập nhật menu khay khi có gì thay đổi (đổi con trỏ bằng phím tắt, giao diện...)."""
+        sig = self.tray_state()
+        if sig == self.tray_sig and not force:
+            return
+        self.tray_sig = sig
+        try:
+            self.icon.update_menu()
+        except Exception:
+            pass
+
+    def tray_use_profile(self):
+        """Chuyển giao diện sang hồ sơ mà menu khay đang áp vào."""
+        pr = self.tray_pr
+        if pr is not None and pr not in self.cfg["profiles"]:
+            pr = self.tray_pr = None
+        if self.edit_profile is not pr:
+            self.edit_profile = pr
+            self.update_profile_menus()
+        if not self.active:
+            self.use_style(self.style_of(pr))
+
+    def handle_tray(self, cmd, arg):
+        if cmd == "tray_profile":
+            self.tray_pr = next((p for p in self.cfg["profiles"] if p["name"] == arg), None)
+            self.tray_use_profile()
+        elif cmd == "tray_shape":
+            self.tray_use_profile()
+            self.set_shape(arg)
+        elif cmd == "tray_fav":
+            self.tray_use_profile()
+            self.use_fav(arg)
+        elif cmd == "tray_mine":
+            self.tray_use_profile()
+            if Path(arg).is_file():
+                self.use_my_cursor(arg)
+        self.save()
+        self.sync_tray()
+
     # ------------------------------------------------------------ Hồ sơ riêng từng game
     def profile_label(self, pr):
         return T("Mặc định (mọi game)") if pr is None else pr["name"]
@@ -1962,6 +2177,7 @@ class App:
     def pick_profile(self, label):
         pr = next((p for p in self.cfg["profiles"] if p["name"] == label), None)
         self.edit_profile = pr
+        self.tray_pr = pr
         self.update_profile_menus()
         if not self.active:
             self.use_style(self.style_of(pr))
@@ -2007,6 +2223,7 @@ class App:
         st = json.loads(json.dumps(st))
         pr = {"name": name, "exes": list(exes), "style": st}
         self.cfg["profiles"].append(pr)
+        self.tray_pr = pr
         added = [e for e in exes if e.lower() not in self.app_set]
         if added:                # game có hồ sơ riêng thì chắc chắn được áp dụng
             self.cfg["apps"] = self.cfg["apps"] + added
@@ -2024,6 +2241,7 @@ class App:
             self.create_profile(title, exes)
             return
         self.edit_profile = pr
+        self.tray_pr = pr
         self.update_profile_menus()
         self.use_style(pr["style"])
         self.show_tab("cursor")
@@ -2044,6 +2262,8 @@ class App:
         self.cfg["profiles"].remove(pr)
         self.edit_profile = None
         self.play_profile = None
+        if self.tray_pr is pr:
+            self.tray_pr = None
         self.update_profile_menus()
         self.use_style(self.cfg.base, force=True)
         if self.tab == "apps":
@@ -2264,7 +2484,7 @@ class App:
                       selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
         head = ctk.CTkFrame(page, fg_color="transparent")
         head.pack(fill="x", pady=(0, 10))
-        self.view_map = {T("Bộ EzCursor"): "ez", "Bibata": "bibata", T("Của bạn"): "mine"}
+        self.view_map = {T("Bộ EzCursor"): "ez", "Bibata": "bibata", T("Của bạn"): "mine", T("Trực tuyến"): "online"}
         if not has_bib:
             del self.view_map["Bibata"]
         self.view_seg = ctk.CTkSegmentedButton(head, values=list(self.view_map),
@@ -2276,12 +2496,18 @@ class App:
         # Hàng chủ đề: mỗi nhóm một bộ nút
         top = ctk.CTkFrame(page, fg_color="transparent")
         top.pack(fill="x")
-        self.caps(top, "CHỦ ĐỀ").pack(anchor="w")
+        self.theme_caps = self.caps(top, "CHỦ ĐỀ")
+        self.theme_caps.pack(anchor="w")
         self.chip_rows = {}
         self.theme_buttons, self.own_theme_buttons = {}, {}
-        for view in ("ez", "bibata", "mine"):
+        for view in ("ez", "bibata", "mine", "online"):
             row = ctk.CTkFrame(top, fg_color="transparent")
             self.chip_rows[view] = row
+        self.cyan_button(self.chip_rows["online"], "Làm mới", lambda: self.start_catalog(force=True),
+                         ctk.CTkImage(simple_icon("refresh", CYAN_TEXT, 32), size=(16, 16))).pack(side="left")
+        self.cat_label = ctk.CTkLabel(self.chip_rows["online"], text="", font=self.F.b(12), text_color=TEXT2,
+                                      wraplength=520, justify="left")
+        self.cat_label.pack(side="left", padx=(12, 0))
         self.mine_theme_buttons = {}
         for key, label in (("original", T("Màu gốc")), ("tint", T("Tô màu"))):
             b = ctk.CTkButton(self.chip_rows["mine"], text=label, height=40, width=130, corner_radius=10,
@@ -2309,9 +2535,11 @@ class App:
             b.pack(side="left", padx=(0, 8))
             self.theme_buttons[key] = b
 
-        self.caps(page, "MÀU TÙY CHỈNH").pack(anchor="w", pady=(12, 0))
+        self.sw_caps = self.caps(page, "MÀU TÙY CHỈNH")
+        self.sw_caps.pack(anchor="w", pady=(12, 0))
         sw = ctk.CTkFrame(page, fg_color="transparent")
         sw.pack(fill="x", pady=(6, 12))
+        self.sw_row = sw
         self.bib_swatches = {}
         for c, name in SWATCHES:
             b = ctk.CTkButton(sw, text="", width=32, height=32, corner_radius=16, fg_color=c,
@@ -2346,10 +2574,11 @@ class App:
 
         grid = self.card(page)
         grid.pack(fill="both", expand=True)
+        self.lib_card = grid
         cols = 5
         self.lib_grids = {}
-        for view in ("ez", "bibata", "mine"):
-            if view == "mine":
+        for view in ("ez", "bibata", "mine", "online"):
+            if view in ("mine", "online"):
                 inner = ctk.CTkScrollableFrame(grid, fg_color="transparent", scrollbar_button_color=BORDER,
                                                scrollbar_button_hover_color="#3A4152")
             else:
@@ -2358,6 +2587,7 @@ class App:
                 inner.grid_columnconfigure(i, weight=1, uniform="t")
             self.lib_grids[view] = inner
         self.mine_tiles = {}
+        self.star_btns = {}
         for shape, label, _f, _h, _g in OWN_CURSORS:
             if own_image(shape) is None:
                 continue
@@ -2367,6 +2597,7 @@ class App:
                               command=lambda sh=shape: self.pick_own(sh))
             b.grid(row=n // cols, column=n % cols, sticky="ew", padx=4, pady=4)
             self.own_tiles[shape] = b
+            self.add_star(b, shape)
         if has_bib:
             for i, (name, label) in enumerate(BIBATA_CURSORS):
                 b = ctk.CTkButton(self.lib_grids["bibata"], text=T(label), compound="top", height=94, width=10,
@@ -2374,28 +2605,33 @@ class App:
                                   command=lambda n=name: self.pick_bibata(n))
                 b.grid(row=i // cols, column=i % cols, sticky="ew", padx=4, pady=4)
                 self.bib_tiles[name] = b
+                self.add_star(b, "bib:" + name)
 
         foot = ctk.CTkFrame(page, fg_color="transparent")
         foot.pack(fill="x", pady=(10, 0))
-        ctk.CTkLabel(foot, text=T("Chọn một màu để chuyển sang chủ đề Tùy chỉnh."), font=self.F.b(12),
-                     text_color=TEXT2).pack(side="left")
+        ctk.CTkLabel(foot, text=T("Bấm ☆ để thêm vào Yêu thích. Ctrl+Alt+R sẽ chỉ đổi giữa các con trỏ yêu thích."),
+                     font=self.F.b(12), text_color=TEXT2).pack(side="left")
         self.bib_link = ctk.CTkLabel(foot, text="Bibata © Abdulkaiz Khatri · GPL-3.0", font=self.F.b(12),
                                      text_color=CYAN_TEXT, cursor="hand2")
         self.bib_link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/ful1e5/Bibata_Cursor"))
         self._lib_sig = None
         self._own_sig = None
         self.rebuild_mine_tiles()
+        self.cat_tiles = {}
+        self.build_online_tiles()
         self.show_lib_view()
         return page
 
     def rebuild_mine_tiles(self):
         """Dựng lại lưới "Của bạn": ô Thêm + mỗi con trỏ đã lưu."""
+        self.mine_sig += 1
         grid = getattr(self, "lib_grids", {}).get("mine")
         if grid is None:
             return
         for w in grid.winfo_children():
             w.destroy()
         self.mine_tiles = {}
+        self.star_btns = {k: v for k, v in getattr(self, "star_btns", {}).items() if not k.startswith("my:")}
         cols = 5
         add = ctk.CTkButton(grid, text=T("+ Thêm con trỏ"), compound="top", height=94, width=10, corner_radius=12,
                             border_width=1, border_color=mix(BORDER, CYAN, 0.5), fg_color=mix(CARD, CYAN, 0.06),
@@ -2419,11 +2655,186 @@ class App:
                               command=lambda p=f: self.use_my_cursor(p))
             b.grid(row=i // cols, column=i % cols, sticky="ew", padx=4, pady=4)
             self.mine_tiles[str(f)] = b
+            self.add_star(b, "my:" + f.name)
         if not files:
             ctk.CTkLabel(grid, text=T("Chưa có con trỏ nào. Bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF "
                                       "hoặc file con trỏ .cur, .ani."), font=self.F.b(12), text_color=TEXT2,
                          wraplength=480, justify="left").grid(row=0, column=1, columnspan=4, sticky="w", padx=12)
         self.update_library()
+
+    # ------------------------------------------------------------ Kho con trỏ trực tuyến
+    def cat_file(self, cid):
+        name = self.cfg["catalog_got"].get(cid)
+        if not name:
+            return None
+        f = MY_DIR / name
+        return f if f.is_file() else None
+
+    def cat_thumb_path(self, e):
+        return CAT_DIR / f"{e['id']}-{e['sha256'][:8]}.png"
+
+    def start_catalog(self, force=False):
+        if self.cat_busy:
+            return
+        self.cat_busy = True
+        self.cat_status = ("loading", 0)
+        self.update_cat_label()
+
+        def work():
+            try:
+                data = json.loads(http_get(CATALOG_URL, 512 * 1024).decode("utf-8"))
+                entries = clean_catalog(data)
+                try:
+                    CAT_DIR.mkdir(parents=True, exist_ok=True)
+                    (CAT_DIR / "catalog.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                except OSError:
+                    pass
+                self.q.put(("cat_list", entries, True))
+                self.fetch_thumbs(entries)
+            except Exception as ex:
+                log.warning("Kho trực tuyến: %s", ex)
+                self.q.put(("cat_error", str(ex)))
+            finally:
+                self.q.put(("cat_end",))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def fetch_thumbs(self, entries):
+        for e in entries:
+            path = self.cat_thumb_path(e)
+            if path.exists():
+                continue
+            try:
+                data = http_get(urllib.parse.urljoin(CATALOG_URL, e["thumb"]), 512 * 1024)
+                Image.open(io.BytesIO(data)).verify()
+                path.write_bytes(data)
+                self.q.put(("cat_thumb", e["id"]))
+            except Exception as ex:
+                log.warning("Ảnh nhỏ %s: %s", e["id"], ex)
+
+    def handle_catalog(self, cmd, *args):
+        if cmd == "cat_list":
+            entries, online = args
+            self.cat_entries = entries
+            self.cat_status = ("ok" if online else "offline", len(entries))
+            self.build_online_tiles()
+        elif cmd == "cat_error":
+            if self.cat_entries is None:
+                try:
+                    data = json.loads((CAT_DIR / "catalog.json").read_text(encoding="utf-8"))
+                    self.handle_catalog("cat_list", clean_catalog(data), False)
+                    return
+                except Exception:
+                    pass
+            if self.cat_status[0] != "offline":
+                self.cat_status = ("error", 0)
+        elif cmd == "cat_end":
+            self.cat_busy = False
+        elif cmd == "cat_thumb":
+            self.set_cat_tile(args[0])
+        elif cmd == "cat_done":
+            cid, path = args
+            self.cat_dl.discard(cid)
+            self.cfg["catalog_got"] = dict(self.cfg["catalog_got"], **{cid: Path(path).name})
+            self.rebuild_mine_tiles()
+            self.use_my_cursor(path)
+            self.set_cat_tile(cid)
+            self.save()
+        elif cmd == "cat_fail":
+            cid, msg = args
+            self.cat_dl.discard(cid)
+            self.set_cat_tile(cid)
+            messagebox.showerror(APP_NAME, T("Không tải được con trỏ:") + f"\n{T(msg)}", parent=self.win)
+        self.update_cat_label()
+
+    def update_cat_label(self):
+        kind, n = self.cat_status
+        txt = {"loading": T("Đang tải danh sách…"),
+               "ok": T("{n} con trỏ · Bấm để tải về, con trỏ sẽ nằm trong mục Của bạn.").format(n=n),
+               "offline": T("Đang xem danh sách lưu lần trước (chưa kết nối được)."),
+               "error": T("Không kết nối được kho trực tuyến. Kiểm tra mạng rồi bấm Làm mới.")}.get(kind, "")
+        try:
+            self.cat_label.configure(text=txt, text_color=AMBER if kind in ("error", "offline") else TEXT2)
+        except (tk.TclError, AttributeError):
+            pass
+
+    def build_online_tiles(self):
+        grid = getattr(self, "lib_grids", {}).get("online")
+        if grid is None:
+            return
+        for w in grid.winfo_children():
+            w.destroy()
+        self.cat_tiles = {}
+        cols = 5
+        today = time.strftime("%Y-%m-%d")
+        for i, e in enumerate(self.cat_entries or []):
+            b = ctk.CTkButton(grid, text="", compound="top", height=104, width=10, corner_radius=12,
+                              border_width=1, font=self.F.b(12), command=lambda e=e: self.online_pick(e))
+            b.grid(row=i // cols, column=i % cols, sticky="ew", padx=4, pady=4)
+            self.cat_tiles[e["id"]] = b
+            try:
+                age = (time.mktime(time.strptime(today, "%Y-%m-%d"))
+                       - time.mktime(time.strptime(e["added"], "%Y-%m-%d"))) / 86400
+            except ValueError:
+                age = 999
+            if age <= 30:
+                ctk.CTkLabel(b, text=T("MỚI"), font=self.F.m(9), text_color="#0B0D12", fg_color=GREEN,
+                             corner_radius=6, height=16, width=10).place(x=8, y=7)
+            self.set_cat_tile(e["id"])
+        self.update_cat_label()
+        self.update_library()
+
+    def set_cat_tile(self, cid):
+        b = getattr(self, "cat_tiles", {}).get(cid)
+        e = next((x for x in self.cat_entries or [] if x["id"] == cid), None)
+        if b is None or e is None:
+            return
+        name = catalog_name(e)
+        name = name if len(name) <= 18 else name[:16] + "…"
+        state = (T("Đang tải…") if cid in self.cat_dl else T("✓ Đã có") if self.cat_file(cid) else T("Tải về"))
+        img = self.cat_thumbs.get(cid)
+        if img is None:
+            try:
+                pic = Image.open(self.cat_thumb_path(e)).convert("RGBA")
+                img = self.cat_thumbs[cid] = ctk.CTkImage(pic, size=(56, 56))
+            except Exception:
+                img = ctk.CTkImage(Image.new("RGBA", (112, 112), (0, 0, 0, 0)), size=(56, 56))
+        try:
+            b.configure(text=f"{name}\n{state}", image=img)
+        except tk.TclError:
+            pass
+
+    def online_pick(self, e):
+        cid = e["id"]
+        f = self.cat_file(cid)
+        if f is not None:
+            self.use_my_cursor(f)
+            return
+        if cid in self.cat_dl:
+            return
+        self.cat_dl.add(cid)
+        self.set_cat_tile(cid)
+        name = catalog_name(e)
+
+        def work():
+            try:
+                data = http_get(urllib.parse.urljoin(CATALOG_URL, e["file"]), min(e["size"] + 1024, CAT_MAX))
+                if hashlib.sha256(data).hexdigest() != e["sha256"]:
+                    raise ValueError("File không khớp mã kiểm tra")
+                MY_DIR.mkdir(parents=True, exist_ok=True)
+                dest = unique_my_path(name + Path(e["file"]).suffix.lower())
+                dest.write_bytes(data)
+                try:
+                    load_cursor_file(str(dest))
+                except Exception:
+                    dest.unlink()
+                    raise ValueError("File con trỏ bị lỗi")
+                self.q.put(("cat_done", cid, str(dest)))
+            except Exception as ex:
+                log.warning("Tải %s: %s", cid, ex)
+                self.q.put(("cat_fail", cid, str(ex)))
+
+        threading.Thread(target=work, daemon=True).start()
 
     def set_mine_tint(self, on):
         self.cfg["tint_image"] = on
@@ -2438,6 +2849,14 @@ class App:
         for view, row in self.chip_rows.items():
             row.pack_forget()
         self.chip_rows[v].pack(fill="x", pady=(6, 0))
+        if v == "online":
+            self.theme_caps.pack_forget()
+        else:
+            self.theme_caps.pack(anchor="w", before=self.chip_rows[v])
+        try:
+            self.view_seg.set({k2: k for k, k2 in self.view_map.items()}[v])
+        except (KeyError, tk.TclError):
+            pass
         for view, g in self.lib_grids.items():
             g.pack_forget()
         self.lib_grids[v].pack(fill="both", expand=True, padx=10, pady=10)
@@ -2451,6 +2870,14 @@ class App:
             self.mine_del.pack(side="right")
         else:
             self.mine_del.pack_forget()
+        if v == "online":
+            self.sw_caps.pack_forget()
+            self.sw_row.pack_forget()
+            if self.cat_entries is None and not self.cat_busy:
+                self.start_catalog()
+        elif not self.sw_row.winfo_ismapped():
+            self.sw_caps.pack(anchor="w", pady=(12, 0), before=self.lib_card)
+            self.sw_row.pack(fill="x", pady=(6, 12), before=self.lib_card)
 
     def set_lib_view(self, view):
         self.lib_view = view
@@ -2489,6 +2916,59 @@ class App:
             self.cfg["shape"] = "Bibata"
         self.refresh()
 
+    # ------------------------------------------------------------ Con trỏ yêu thích
+    def add_star(self, tile, fid):
+        if not hasattr(self, "star_imgs"):
+            self.star_imgs = {True: ctk.CTkImage(star_icon(True, "#FFC940", 32), size=(15, 15)),
+                              False: ctk.CTkImage(star_icon(False, "#6B7488", 32), size=(15, 15))}
+        sb = ctk.CTkButton(tile, text="", width=24, height=24, corner_radius=7, fg_color="transparent",
+                           hover_color="#2A3040", border_width=0, image=self.star_imgs[False],
+                           command=lambda: self.toggle_fav(fid))
+        sb.place(relx=1.0, x=-5, y=5, anchor="ne")
+        self.star_btns[fid] = sb
+
+    def toggle_fav(self, fid):
+        favs = list(self.cfg["favorites"])
+        if fid in favs:
+            favs.remove(fid)
+        else:
+            favs.append(fid)
+        self.cfg["favorites"] = favs
+        self.update_library()
+        self.save()
+
+    def fav_valid(self, fid):
+        if fid.startswith("bib:"):
+            return BIBATA_DIR.exists() and fid[4:] in dict(BIBATA_CURSORS)
+        if fid.startswith("my:"):
+            return (MY_DIR / fid[3:]).is_file()
+        return fid in OWN_BY_ID and own_image(fid) is not None
+
+    def fav_label(self, fid):
+        if fid.startswith("bib:"):
+            return "Bibata · " + T(dict(BIBATA_CURSORS).get(fid[4:], fid[4:]))
+        if fid.startswith("my:"):
+            return Path(fid[3:]).stem
+        return T(OWN_BY_ID[fid][1]) if fid in OWN_BY_ID else T(fid)
+
+    def current_fav_id(self):
+        c = self.cfg
+        if c["shape"] == "Bibata":
+            return "bib:" + c["bibata_cursor"]
+        if c["shape"] == "Ảnh tải lên":
+            return "my:" + Path(c["image"]).name if c["image"] and Path(c["image"]).parent == MY_DIR else None
+        return c["shape"]
+
+    def use_fav(self, fid):
+        if not self.fav_valid(fid):
+            return
+        if fid.startswith("bib:"):
+            self.pick_bibata(fid[4:])
+        elif fid.startswith("my:"):
+            self.use_my_cursor(MY_DIR / fid[3:])
+        else:
+            self.set_shape(fid)
+
     def pick_own(self, shape):
         self.cfg["shape"] = shape
         self.refresh()
@@ -2509,6 +2989,18 @@ class App:
                     border_color=ACCENT if on else BORDER, text_color="#FFFFFF" if on else TEXT2)
 
     def update_library(self):
+        self._update_library()
+        for sb in getattr(self, "star_btns", {}).values():
+            try:
+                col = sb.master.cget("fg_color")
+                hov = sb.master.cget("hover_color")
+                if getattr(sb, "_bg", None) != col:
+                    sb._bg = col
+                    sb.configure(fg_color=col, bg_color=col, hover_color=hov)
+            except (tk.TclError, ValueError):
+                pass
+
+    def _update_library(self):
         if getattr(self, "bib_swatches", None) is None:
             return
         c = self.cfg
@@ -2524,12 +3016,30 @@ class App:
             img = (self._chip_dot(c["color"]) if key == "tint" or own_image("EzDrop") is None
                    else ctk.CTkImage(own_image("EzDrop").resize((32, 32), Image.LANCZOS), size=(16, 16)))
             self._chip_style(b, (key == "tint") == bool(c["tint_image"]), img)
+        favs = set(c["favorites"])
+        for fid, sb in getattr(self, "star_btns", {}).items():
+            on = fid in favs
+            if getattr(sb, "_fav_on", None) != on:
+                sb._fav_on = on
+                try:
+                    sb.configure(image=self.star_imgs[on])
+                except tk.TclError:
+                    pass
         mine_sel = c["image"] if c["shape"] == "Ảnh tải lên" else None
         for path, b in getattr(self, "mine_tiles", {}).items():
             on = path == mine_sel
             b.configure(fg_color=mix(CARD, ACCENT, 0.16) if on else FIELD,
                         hover_color=mix(CARD, ACCENT, 0.24) if on else "#161A23",
                         border_color=ACCENT if on else BORDER, text_color="#FFFFFF" if on else TEXT2)
+        for cid, b in getattr(self, "cat_tiles", {}).items():
+            f = self.cat_file(cid)
+            on = mine_sel is not None and f is not None and Path(mine_sel) == f
+            try:
+                b.configure(fg_color=mix(CARD, ACCENT, 0.16) if on else FIELD,
+                            hover_color=mix(CARD, ACCENT, 0.24) if on else "#161A23",
+                            border_color=ACCENT if on else BORDER, text_color="#FFFFFF" if on else TEXT2)
+            except tk.TclError:
+                pass
         if getattr(self, "mine_del", None):
             self.mine_del.configure(state="normal" if mine_sel and mine_sel in self.mine_tiles else "disabled")
         custom_on = {"ez": c["own_theme"] == "custom", "bibata": c["bibata_theme"] == "custom",
@@ -3016,6 +3526,251 @@ class App:
         d.after(150, d.focus_force)
         d.after(200, poll)
 
+    # ------------------------------------------------------------ Thiết lập lần đầu
+    def wait_setup(self):
+        """Chờ tới khi cửa sổ chính hiện (sau màn hình chào / khi mở từ khay) rồi mới mở thiết lập."""
+        if self.quitting or getattr(self, "setup_win", None) is not None:
+            return
+        try:
+            ready = self.win.winfo_viewable() and not getattr(self, "splashing", False)
+        except (tk.TclError, AttributeError):
+            ready = False
+        if ready:
+            self.run_setup()
+        else:
+            self.ov.after(400, self.wait_setup)
+
+    def run_setup(self):
+        d = ctk.CTkToplevel(self.ov, fg_color=BG)
+        self.setup_win = d
+        d.title(APP_NAME)
+        d.resizable(False, False)
+        d.transient(self.win)
+        d.attributes("-topmost", True)
+        running = {n.lower() for n, _ in list_running_apps()}
+        app_set = {a.lower() for a in self.cfg["apps"]}
+        st = {"step": 0, "shape": self.cfg["shape"] if self.cfg["shape"] in OWN_BY_ID else "EzDrop",
+              "size": self.cfg["size"]}
+        game_vars = [(tk.BooleanVar(value=any(e.lower() in running or e.lower() in app_set for e in exes)), title, exes)
+                     for title, exes in ARPG_GAMES]
+        all_var = tk.BooleanVar(value=self.cfg["all_apps"])
+
+        outer = ctk.CTkFrame(d, fg_color="transparent")
+        outer.pack(fill="both", expand=True, padx=26, pady=(20, 18))
+        top = ctk.CTkFrame(outer, fg_color="transparent")
+        top.pack(fill="x")
+        self.caps(top, "THIẾT LẬP NHANH", ACCENT).pack(side="left")
+        step_lbl = ctk.CTkLabel(top, text="", font=self.F.m(11), text_color=MUTED)
+        step_lbl.pack(side="right")
+        bar = ctk.CTkFrame(outer, fg_color="transparent")
+        bar.pack(fill="x", pady=(8, 14))
+        dots = []
+        for i in range(3):
+            seg = ctk.CTkFrame(bar, height=4, corner_radius=2, fg_color=BORDER)
+            seg.pack(side="left", fill="x", expand=True, padx=(0 if i == 0 else 6, 0))
+            dots.append(seg)
+        body = ctk.CTkFrame(outer, fg_color="transparent", width=640, height=380)
+        body.pack(fill="both", expand=True)
+        body.pack_propagate(False)
+        foot = ctk.CTkFrame(outer, fg_color="transparent")
+        foot.pack(fill="x", pady=(14, 0))
+        skip = ctk.CTkButton(foot, text=T("Bỏ qua"), width=90, height=40, fg_color="transparent",
+                             hover_color="#1A1E29", text_color=TEXT2, font=self.F.b(13), command=lambda: finish(False))
+        skip.pack(side="left")
+        nxt = ctk.CTkButton(foot, text="", width=150, height=42, corner_radius=10, fg_color=ACCENT,
+                            hover_color=mix(ACCENT, "#FFFFFF", 0.15), text_color="#FFFFFF", font=self.F.h(15),
+                            command=lambda: go(1))
+        nxt.pack(side="right")
+        back = ctk.CTkButton(foot, text=T("Quay lại"), width=110, height=42, corner_radius=10, border_width=1,
+                             border_color=BORDER, fg_color="transparent", hover_color="#1A1E29", text_color=TEXT,
+                             font=self.F.b(13, strong=True), command=lambda: go(-1))
+
+        def title(parent, t, sub):
+            ctk.CTkLabel(parent, text=T(t), font=self.F.h(24), text_color=TEXT).pack(anchor="w")
+            ctk.CTkLabel(parent, text=T(sub), font=self.F.b(13), text_color=TEXT2, wraplength=620,
+                         justify="left").pack(anchor="w", pady=(2, 14))
+
+        def page_games(f):
+            title(f, "Bạn chơi game nào?", "EzCursor chỉ hiện con trỏ khi các game này đang mở. "
+                                           "Có thể đổi sau ở tab Ứng dụng.")
+            grid = ctk.CTkFrame(f, fg_color="transparent")
+            grid.pack(fill="x")
+            grid.grid_columnconfigure((0, 1), weight=1, uniform="g")
+            for i, (var, name, exes) in enumerate(game_vars):
+                cell = ctk.CTkFrame(grid, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=10,
+                                    height=44)
+                cell.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0 if i % 2 == 0 else 5, 0 if i % 2 else 5),
+                          pady=4)
+                cb = ctk.CTkCheckBox(cell, text=name, variable=var, font=self.F.b(13, strong=True), text_color=TEXT,
+                                     checkbox_width=20, checkbox_height=20, corner_radius=6, border_width=1,
+                                     fg_color=ACCENT, hover_color=ACCENT, border_color="#4A5266",
+                                     checkmark_color="#FFFFFF")
+                cb.pack(side="left", padx=12, pady=10)
+                if any(e.lower() in running for e in exes):
+                    ctk.CTkLabel(cell, text=T(" ĐANG CHẠY "), font=self.F.m(10), text_color=CYAN_TEXT,
+                                 corner_radius=10, height=20, fg_color=mix(CARD, CYAN, 0.1)).pack(side="right", padx=10)
+            row = ctk.CTkFrame(f, fg_color="transparent")
+            row.pack(fill="x", pady=(14, 0))
+            self.switch(row, all_var, lambda: None).pack(side="left")
+            ctk.CTkLabel(row, text=T("  Áp dụng cho mọi ứng dụng (kể cả Desktop)"), font=self.F.b(13),
+                         text_color=TEXT).pack(side="left")
+
+        def page_cursor(f):
+            title(f, "Chọn con trỏ", "Chọn con trỏ bạn thích. Bộ sưu tập còn bộ Bibata và chỗ thêm con trỏ "
+                                     "của riêng bạn.")
+            grid = ctk.CTkFrame(f, fg_color="transparent")
+            grid.pack(fill="x")
+            cols = 7
+            for i in range(cols):
+                grid.grid_columnconfigure(i, weight=1, uniform="c")
+            tiles = {}
+            name_lbl = ctk.CTkLabel(f, text="", font=self.F.b(14, strong=True), text_color=TEXT)
+
+            def paint():
+                name_lbl.configure(text=T(OWN_BY_ID[st["shape"]][1]))
+                for sh, b in tiles.items():
+                    on = sh == st["shape"]
+                    b.configure(fg_color=mix(CARD, ACCENT, 0.16) if on else FIELD,
+                                hover_color=mix(CARD, ACCENT, 0.24) if on else "#161A23",
+                                border_color=ACCENT if on else BORDER)
+
+            def pick(sh):
+                st["shape"] = sh
+                paint()
+
+            n = 0
+            for sh, label, _f, _h, _g in OWN_CURSORS:
+                im = own_image(sh)
+                if im is None:
+                    continue
+                b = ctk.CTkButton(grid, text="", width=10, height=78, corner_radius=12, border_width=1,
+                                  image=ctk.CTkImage(im.resize((104, 104), Image.LANCZOS), size=(52, 52)),
+                                  command=lambda sh=sh: pick(sh))
+                b.grid(row=n // cols, column=n % cols, sticky="ew", padx=3, pady=3)
+                tiles[sh] = b
+                n += 1
+            paint()
+            row = ctk.CTkFrame(f, fg_color="transparent")
+            row.pack(fill="x", pady=(16, 0))
+            self.caps(row, "KÍCH THƯỚC").pack(side="left", padx=(0, 12))
+            sizes = {T("Nhỏ"): 48, T("Vừa"): 64, T("Lớn"): 88}
+            seg = ctk.CTkSegmentedButton(row, values=list(sizes), height=36, font=self.F.b(13, strong=True),
+                                         fg_color=FIELD, unselected_color=FIELD, unselected_hover_color="#1A1E29",
+                                         selected_color=mix(CARD, ACCENT, 0.35),
+                                         selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT,
+                                         command=lambda v: st.update(size=sizes[v]))
+            seg.pack(side="left")
+            name_lbl.pack(in_=row, side="right")
+            name_lbl.lift()
+            seg.set(min(sizes, key=lambda k: abs(sizes[k] - st["size"])))
+            st["size"] = sizes[seg.get()]
+
+        def page_done(f):
+            title(f, "Sẵn sàng!", "Mở game là con trỏ mới sẽ hiện. Vài phím tắt nên nhớ:")
+            games = [name for var, name, _ in game_vars if var.get()]
+            card = self.card(f)
+            card.pack(fill="x")
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=16, pady=12)
+            sh = st["shape"]
+            line = ctk.CTkFrame(inner, fg_color="transparent")
+            line.pack(fill="x", pady=(0, 8))
+            if own_image(sh) is not None:
+                ctk.CTkLabel(line, text="", image=ctk.CTkImage(own_image(sh).resize((80, 80), Image.LANCZOS),
+                                                               size=(40, 40))).pack(side="left", padx=(0, 12))
+            txt = ctk.CTkFrame(line, fg_color="transparent")
+            txt.pack(side="left", fill="x", expand=True)
+            ctk.CTkLabel(txt, text=T(OWN_BY_ID[sh][1]), font=self.F.b(15, strong=True), text_color=TEXT,
+                         anchor="w").pack(anchor="w")
+            where = T("Mọi ứng dụng") if all_var.get() else (", ".join(games) or T("(chưa chọn)"))
+            ctk.CTkLabel(txt, text=T("Game") + ": " + where, font=self.F.b(12), text_color=TEXT2, anchor="w",
+                         wraplength=520, justify="left").pack(anchor="w")
+            hk = self.cfg["hotkeys"]
+            for act, label in (("toggle", "Bật / tắt"), ("shape", "Đổi con trỏ (giữa các con trỏ yêu thích)"),
+                               ("find", "Tìm con trỏ (hoặc lắc chuột)"), ("color", "Đổi màu")):
+                r = ctk.CTkFrame(inner, fg_color="transparent")
+                r.pack(fill="x", pady=2)
+                ctk.CTkLabel(r, text=" + ".join(hotkey_parts(hk[act], act)), font=self.F.m(12), text_color=ACCENT,
+                             width=150, anchor="w").pack(side="left")
+                ctk.CTkLabel(r, text=T(label), font=self.F.b(13), text_color=TEXT, anchor="w").pack(side="left")
+            ctk.CTkLabel(f, text=T("EzCursor chạy ở khay hệ thống. Chuột phải vào icon để đổi nhanh con trỏ "
+                                   "hoặc hồ sơ."), font=self.F.b(12), text_color=TEXT2, wraplength=620,
+                         justify="left").pack(anchor="w", pady=(12, 0))
+
+        pages = [page_games, page_cursor, page_done]
+
+        def show():
+            for w in body.winfo_children():
+                w.destroy()
+            f = ctk.CTkFrame(body, fg_color="transparent")
+            f.pack(fill="both", expand=True)
+            pages[st["step"]](f)
+            i = st["step"]
+            step_lbl.configure(text=T("Bước {i} / 3").format(i=i + 1))
+            for k, seg in enumerate(dots):
+                seg.configure(fg_color=ACCENT if k <= i else BORDER)
+            nxt.configure(text=T("Bắt đầu") if i == 2 else T("Tiếp tục"))
+            if i > 0:
+                if not back.winfo_ismapped():
+                    back.pack(side="right", padx=(0, 8))
+            else:
+                back.pack_forget()
+
+        def go(delta):
+            if st["step"] == 2 and delta > 0:
+                finish(True)
+                return
+            st["step"] = max(0, min(2, st["step"] + delta))
+            show()
+
+        def finish(apply):
+            if apply:
+                apps = list(self.cfg["apps"])
+                low = {a.lower() for a in apps}
+                for var, _name, exes in game_vars:
+                    for e in exes:
+                        if var.get() and e.lower() not in low:
+                            apps.append(e)
+                            low.add(e.lower())
+                        elif not var.get() and e.lower() in low:
+                            apps = [a for a in apps if a.lower() != e.lower()]
+                            low.discard(e.lower())
+                self.cfg["apps"] = apps
+                self.cfg["all_apps"] = bool(all_var.get())
+                base = self.cfg.base
+                base["shape"], base["size"] = st["shape"], st["size"]
+                self.update_app_set()
+                try:
+                    self.all_var.set(self.cfg["all_apps"])
+                    self.update_applied_label()
+                except AttributeError:
+                    pass
+                self.refresh_apps()
+                if self.cfg.target is base:
+                    self.sync_style_widgets()
+                self.refresh()
+            self.cfg["setup_done"] = True
+            self.save()
+            self.setup_win = None
+            try:
+                d.destroy()
+            except tk.TclError:
+                pass
+            self.show_tab("cursor")
+
+        d.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+        show()
+        try:
+            d.update_idletasks()
+            x = self.win.winfo_rootx() + (self.win.winfo_width() - d.winfo_width()) // 2
+            y = self.win.winfo_rooty() + (self.win.winfo_height() - d.winfo_height()) // 3
+            d.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except tk.TclError:
+            pass
+        d.after(100, d.lift)
+        d.after(150, d.focus_force)
+        d.after(250, lambda: d.grab_set() if d.winfo_exists() else None)
+
     # ------------------------------------------------------------ Điều hướng & trạng thái
     def show_tab(self, key):
         self.tab = key
@@ -3456,6 +4211,12 @@ class App:
         self.refresh()
 
     def next_shape(self):
+        favs = [f for f in self.cfg["favorites"] if self.fav_valid(f)]
+        if favs:
+            cur = self.current_fav_id()
+            i = favs.index(cur) if cur in favs else -1
+            self.use_fav(favs[(i + 1) % len(favs)])
+            return
         options = [x for x in SHAPES if x != "Ảnh tải lên" or self.src_img is not None]
         cur = self.cfg["shape"]
         i = options.index(cur) if cur in options else -1
@@ -3574,6 +4335,7 @@ class App:
             Path(img).unlink()
         except OSError:
             pass
+        self.cfg["favorites"] = [f for f in self.cfg["favorites"] if f != "my:" + Path(img).name]
         for st in [self.cfg.base] + [pr["style"] for pr in self.cfg["profiles"]]:
             if st.get("image") == img:
                 st["image"] = ""
@@ -4085,7 +4847,12 @@ class App:
         while not self.q.empty():
             cmd = self.q.get()
             if isinstance(cmd, tuple):
-                self.handle_update_msg(*cmd)
+                if cmd[0].startswith("tray_"):
+                    self.handle_tray(*cmd)
+                elif cmd[0].startswith("cat_"):
+                    self.handle_catalog(*cmd)
+                else:
+                    self.handle_update_msg(*cmd)
                 continue
             if cmd == "check_update":
                 self.show_window()
@@ -4127,6 +4894,7 @@ class App:
         if now - self.t_flags >= 0.1:                # tín hiệu từ bộ cài, đổi màn hình: 10 lần/giây
             self.t_flags = now
             self.check_monitor()
+            self.sync_tray()
             for flag, action in ((SHOW_FLAG, self.show_window), (QUIT_FLAG, self.quit)):
                 if flag.exists():
                     try:
@@ -4142,6 +4910,7 @@ class App:
             want = self.compute_active() and not self.safe_mode
             if want:      # đổi sang hồ sơ của game trước khi hiện con trỏ
                 pr = self.profile_for_exe(self.fg_exe)
+                self.tray_pr = pr
                 self.use_style(self.style_of(pr))
             self.set_active(want)
             if not self.active:

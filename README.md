@@ -16,6 +16,10 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 - Đổi màu, hình dạng (mũi tên, vòng tròn, dấu thập, chấm, kim cương) và kích thước con trỏ
 - **Con trỏ của bạn**: lưu nhiều ảnh PNG/GIF động hoặc file con trỏ Windows `.cur`, `.ani` trong Bộ sưu tập, bấm là dùng, có thể tô màu
 - **Tìm con trỏ nhanh**: bấm Ctrl + Alt + F hoặc lắc chuột qua lại, con trỏ phóng to và tỏa vòng sáng
+- **Kho con trỏ trực tuyến** (Bộ sưu tập → Trực tuyến): tải mẫu mới mà không cần cập nhật app
+- **Con trỏ yêu thích**: bấm ☆ trên ô con trỏ, Ctrl + Alt + R chỉ đổi giữa các con trỏ yêu thích
+- **Đổi nhanh từ khay hệ thống**: chuột phải icon EzCursor để chọn con trỏ hoặc hồ sơ game
+- **Thiết lập lần đầu** 3 bước: chọn game, chọn con trỏ, xem phím tắt
 - **Bộ EzCursor** gồm 14 con trỏ phong cách game (Liquid Drop, Mảnh hồng, Tâm ngắm Neon, Mũi kiếm, Mũi tên Pha lê, Viên ngọc, Ký tự Rune, Cầu năng lượng, Ngọn lửa, Mũi giáo, Lông vũ, Ngôi sao, Mũi tên Bắn, Mũi tên Neon), dùng màu gốc hoặc đổi sang màu bất kỳ
 - Bộ sưu tập con trỏ **Bibata** với các chủ đề Amber, Classic, Ice hoặc màu tùy chỉnh, kiểu Modern / Original, cho cả người thuận tay trái
 - Chỉ hiện trong những game / ứng dụng bạn chọn, ra ngoài thì con trỏ trở lại bình thường; có sẵn gợi ý các game ARPG phổ biến
@@ -29,13 +33,13 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 ## Cách dùng
 
 1. Để game ở chế độ **Borderless** hoặc **Windowed** (không hoạt động ở Fullscreen độc quyền).
-2. Mở game, mở EzCursor, vào tab **Ứng dụng** → **Làm mới danh sách** → chọn game → **Áp dụng**.
+2. Lần đầu mở EzCursor, chọn game và con trỏ trong màn hình thiết lập nhanh. Thêm game sau này: mở game, vào tab **Ứng dụng** → **Làm mới** → chọn game → **Áp dụng**.
 3. Chỉnh con trỏ ở tab **Con trỏ**. Bấm X để thu nhỏ xuống khay hệ thống.
 
 | Phím tắt | Chức năng |
 |---|---|
 | Ctrl + Alt + H | Bật / tắt |
-| Ctrl + Alt + R | Đổi hình dạng |
+| Ctrl + Alt + R | Đổi con trỏ (giữa các con trỏ yêu thích nếu có) |
 | Ctrl + Alt + 1..5 | Đổi màu |
 | Ctrl + Alt + Q | Thoát |
 | Ctrl + Alt + F | Tìm con trỏ (phóng to + vòng sáng) |
@@ -64,7 +68,8 @@ Cần Python 3 (64-bit). Đặt các file (kèm thư mục `fonts`) cùng một 
 - Run your game in **Borderless** or **Windowed** mode.
 - In the **Ứng dụng** (Apps) tab, click **Làm mới danh sách** (Refresh), select your game and click **Áp dụng** (Apply).
 - Per-game profiles: give each game its own cursor and effects (Apps tab → "+ Own profile").
-- Hotkeys: Ctrl+Alt+H toggle, Ctrl+Alt+R next shape, Ctrl+Alt+1..5 colors, Ctrl+Alt+Q quit (changeable in the Options tab).
+- Hotkeys: Ctrl+Alt+H toggle, Ctrl+Alt+R next cursor (favorites only once you star some), Ctrl+Alt+F find cursor, Ctrl+Alt+1..5 colors, Ctrl+Alt+Q quit (changeable in the Options tab).
+- Library: EzCursor set, Bibata, your own cursors and an **Online** catalog of new designs; right-click the tray icon to switch cursors quickly.
 - EzCursor is an external overlay; it does not modify game files or memory. Use at your own discretion and follow each game's terms of service.
 
 EzCursor is licensed under the [GNU General Public License v3.0](LICENSE).
@@ -75,7 +80,7 @@ EzCursor đi kèm font [Chakra Petch](https://fonts.google.com/specimen/Chakra+P
 
 ### Bộ con trỏ EzCursor
 
-Các con trỏ trong `assets/ez` do EzCursor tự thiết kế, phát hành cùng giấy phép GPL-3.0. File vẽ nằm ở `tools/design_cursors.py`.
+Các con trỏ trong `assets/ez` do EzCursor tự thiết kế, phát hành cùng giấy phép GPL-3.0. File vẽ nằm ở `tools/design_cursors.py`. Nguồn của kho con trỏ trực tuyến nằm ở `tools/catalog_src`, dựng bằng `tools/build_catalog.py` vào thư mục `catalog` của repo ezcursor.github.io.
 
 ### Bibata
 
