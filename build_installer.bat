@@ -50,7 +50,7 @@ echo.
 echo === XONG! Bo cai dat nam trong thu muc: %~dp0installer ===
 
 rem ---------- Phat hanh len GitHub (tuy chon)
-set "REPO=Columbustrade/EzCursor"
+set "REPO=ezcursor/EzCursor"
 set "VER="
 for /f "tokens=3" %%v in ('findstr /c:"#define MyAppVersion" EzCursor.iss') do set "VER=%%~v"
 set "SETUP=installer\EzCursor_Setup_%VER%.exe"

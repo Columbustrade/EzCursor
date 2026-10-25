@@ -1,6 +1,5 @@
-✦ Ngôn ngữ / Language
-- Thêm tiếng Anh: vào Tùy chọn → Ngôn ngữ để chuyển Tiếng Việt / English, đổi ngay không cần khởi động lại
-- English interface: go to Options → Language to switch between Tiếng Việt and English instantly
-
-✦ Giao diện
-- Tab Tùy chọn gọn hơn
+✦ Trang chủ mới / New home
+- EzCursor có trang chủ riêng: https://ezcursor.github.io
+- Mã nguồn chuyển sang github.com/ezcursor/EzCursor, tự cập nhật trỏ về địa chỉ mới
+- EzCursor now has its own website: https://ezcursor.github.io
+- Source moved to github.com/ezcursor/EzCursor; auto-update uses the new address

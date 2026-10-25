@@ -37,10 +37,10 @@ import pystray
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageTk
 
 APP_NAME = "EzCursor"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
-GITHUB_REPO = "Columbustrade/EzCursor"
+GITHUB_REPO = "ezcursor/EzCursor"
 # =========================================================================================
 UPDATE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 

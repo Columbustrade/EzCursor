@@ -5,7 +5,9 @@ Con trỏ chuột tùy chỉnh (màu, hình dạng, ảnh riêng) cho các game 
 
 ## Tải về
 
-Vào mục [**Releases**](https://github.com/Columbustrade/EzCursor/releases/latest), tải file `EzCursor_Setup_x.x.x.exe` và chạy để cài đặt.
+Trang chủ: **https://ezcursor.github.io**
+
+Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest), tải file `EzCursor_Setup_x.x.x.exe` và chạy để cài đặt.
 
 > Vì phần mềm chưa có chữ ký số, Windows có thể hiện cảnh báo *"Windows protected your PC"*. Bấm **More info → Run anyway** để tiếp tục.
 
@@ -48,7 +50,7 @@ Cần Python 3 (64-bit). Đặt các file (kèm thư mục `fonts`) cùng một 
 
 **EzCursor** draws a customizable, high-visibility cursor (color, shape, size or your own PNG image) over selected games and apps, and hides the original cursor while the game is focused.
 
-- Download the installer from [Releases](https://github.com/Columbustrade/EzCursor/releases/latest). If Windows SmartScreen appears, click **More info → Run anyway**.
+- Download the installer from [Releases](https://github.com/ezcursor/EzCursor/releases/latest). If Windows SmartScreen appears, click **More info → Run anyway**.
 - Run your game in **Borderless** or **Windowed** mode.
 - In the **Ứng dụng** (Apps) tab, click **Làm mới danh sách** (Refresh), select your game and click **Áp dụng** (Apply).
 - Hotkeys: Ctrl+Alt+H toggle, Ctrl+Alt+R next shape, Ctrl+Alt+1..5 colors, Ctrl+Alt+Q quit.

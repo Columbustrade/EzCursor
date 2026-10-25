@@ -2,7 +2,7 @@
 (function () {
   "use strict";
 
-  var REPO = "Columbustrade/EzCursor";
+  var REPO = "ezcursor/EzCursor";
   var CFG = window.EZ_CONFIG || {};
   // Mở file trên máy (hoặc localhost) thì hiện các ô còn trống để biết cần điền gì.
   var DEV = location.protocol === "file:" || /^(localhost|127\.)/.test(location.hostname);
@@ -69,8 +69,8 @@
     "support.lead": "EzCursor is free and will stay free. If it makes your games more comfortable, a coffee helps me find time for new features.",
     "support.bank": "Bank transfer",
     "support.paypal": "For supporters outside Vietnam.",
-    "support.alt": "Can't donate? Starring the <a href=\"https://github.com/Columbustrade/EzCursor\" target=\"_blank\" rel=\"noopener\">GitHub repo</a> or telling a friend about EzCursor helps too.",
-    "foot.license": "Released under the <a href=\"https://github.com/Columbustrade/EzCursor/blob/main/LICENSE\" target=\"_blank\" rel=\"noopener\">GPL-3.0</a> license. Bibata cursors by <a href=\"https://github.com/ful1e5/Bibata_Cursor\" target=\"_blank\" rel=\"noopener\">Abdulkaiz Khatri</a>, GPL-3.0.",
+    "support.alt": "Can't donate? Starring the <a href=\"https://github.com/ezcursor/EzCursor\" target=\"_blank\" rel=\"noopener\">GitHub repo</a> or telling a friend about EzCursor helps too.",
+    "foot.license": "Released under the <a href=\"https://github.com/ezcursor/EzCursor/blob/main/LICENSE\" target=\"_blank\" rel=\"noopener\">GPL-3.0</a> license. Bibata cursors by <a href=\"https://github.com/ful1e5/Bibata_Cursor\" target=\"_blank\" rel=\"noopener\">Abdulkaiz Khatri</a>, GPL-3.0.",
     "foot.releases": "All versions", "foot.issues": "Report a bug"
   };
 
