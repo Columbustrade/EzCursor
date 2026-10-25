@@ -1,13 +1,11 @@
-✦ Mới trong 1.7.0
-- Viền khi giữ chuột: thêm viền màu quanh con trỏ khi giữ chuột trái (di chuyển) hoặc chuột phải (tung kỹ năng). Bật và chọn màu trong tab Hiệu ứng, riêng cho từng hồ sơ game
-- Ổn định hơn: nếu EzCursor gặp lỗi, con trỏ thật luôn được trả lại; lỗi lặp lại liên tục thì EzCursor tự tạm tắt con trỏ thay vì bị treo
-- Nhật ký lỗi: nút "Mở thư mục log" trong tab Tùy chọn, gửi file ezcursor.log khi cần báo lỗi
-- Nhẹ hơn: giảm số lần kiểm tra trong vòng lặp chính, con trỏ chỉ được di chuyển khi chuột thật sự di chuyển
-- Hỗ trợ người dùng đã đổi nút chuột trái/phải trong Windows
+✦ Mới trong 1.8.0: Bộ con trỏ EzCursor
+- 12 con trỏ mới phong cách game: Tâm ngắm Neon, Mũi kiếm, Mũi tên Pha lê, Viên ngọc, Ký tự Rune, Cầu năng lượng, Ngọn lửa, Mũi giáo, Lông vũ, Ngôi sao, Mũi tên Bắn, Mũi tên Neon
+- Bộ sưu tập chia hai nhóm: Bộ EzCursor và Bibata
+- Con trỏ EzCursor (kể cả Liquid Drop, Mảnh hồng) giờ đổi được màu: chọn chủ đề Tùy chỉnh hoặc bấm phím đổi màu
+- Nhật ký lỗi ghi chi tiết hơn
 
-✦ New in 1.7.0
-- Outline while holding: a colored outline around the cursor while holding the left (move) or right (skill) mouse button. Turn it on and pick colors in the Effects tab, per game profile
-- More stable: the real cursor is always restored if EzCursor hits an error; repeated errors make EzCursor turn its cursor off instead of freezing
-- Error log: "Open log folder" button in the Options tab; send ezcursor.log when reporting a bug
-- Lighter: fewer checks in the main loop, and the cursor only moves when the mouse actually moves
-- Supports swapped left/right mouse buttons in Windows
+✦ New in 1.8.0: EzCursor cursor set
+- 12 new game-style cursors: Neon Crosshair, Blade, Crystal Arrow, Gem, Rune, Energy Orb, Flame, Spear, Feather, Star, Arrow Shot, Neon Arrow
+- The Library now has two groups: EzCursor set and Bibata
+- EzCursor cursors (including Liquid Drop and Pink Shard) can now be recolored with the Custom theme or the color hotkeys
+- More detailed error log

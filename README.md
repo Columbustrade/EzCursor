@@ -15,6 +15,7 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 
 - Đổi màu, hình dạng (mũi tên, vòng tròn, dấu thập, chấm, kim cương) và kích thước con trỏ
 - Dùng ảnh PNG/GIF động hoặc file con trỏ Windows `.cur`, `.ani` làm con trỏ, có thể tô màu cho ảnh
+- **Bộ EzCursor** gồm 14 con trỏ phong cách game (Liquid Drop, Mảnh hồng, Tâm ngắm Neon, Mũi kiếm, Mũi tên Pha lê, Viên ngọc, Ký tự Rune, Cầu năng lượng, Ngọn lửa, Mũi giáo, Lông vũ, Ngôi sao, Mũi tên Bắn, Mũi tên Neon), dùng màu gốc hoặc đổi sang màu bất kỳ
 - Bộ sưu tập con trỏ **Bibata** với các chủ đề Amber, Classic, Ice hoặc màu tùy chỉnh, kiểu Modern / Original, cho cả người thuận tay trái
 - Chỉ hiện trong những game / ứng dụng bạn chọn, ra ngoài thì con trỏ trở lại bình thường; có sẵn gợi ý các game ARPG phổ biến
 - Cảnh báo khi game đang chạy Fullscreen độc quyền
@@ -69,6 +70,10 @@ EzCursor is licensed under the [GNU General Public License v3.0](LICENSE).
 ### Font
 
 EzCursor đi kèm font [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) và [Be Vietnam Pro](https://fonts.google.com/specimen/Be+Vietnam+Pro), phát hành theo giấy phép SIL Open Font License (xem các file `OFL-*.txt` trong thư mục `fonts`).
+
+### Bộ con trỏ EzCursor
+
+Các con trỏ trong `assets/ez` do EzCursor tự thiết kế, phát hành cùng giấy phép GPL-3.0. File vẽ nằm ở `tools/design_cursors.py`.
 
 ### Bibata
 
