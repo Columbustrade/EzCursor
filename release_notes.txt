@@ -1,11 +1,7 @@
-✦ Mới trong 1.8.0: Bộ con trỏ EzCursor
-- 12 con trỏ mới phong cách game: Tâm ngắm Neon, Mũi kiếm, Mũi tên Pha lê, Viên ngọc, Ký tự Rune, Cầu năng lượng, Ngọn lửa, Mũi giáo, Lông vũ, Ngôi sao, Mũi tên Bắn, Mũi tên Neon
-- Bộ sưu tập chia hai nhóm: Bộ EzCursor và Bibata
-- Con trỏ EzCursor (kể cả Liquid Drop, Mảnh hồng) giờ đổi được màu: chọn chủ đề Tùy chỉnh hoặc bấm phím đổi màu
-- Nhật ký lỗi ghi chi tiết hơn
+✦ Mới trong 1.9.0
+- Con trỏ của bạn: Bộ sưu tập có nhóm mới "Của bạn" lưu mọi con trỏ bạn đã thêm (PNG, GIF động, .cur, .ani). Bấm "+ Thêm con trỏ" để thêm, bấm vào ô để dùng, có thể tô màu hoặc xóa. Ảnh đã tải lên ở các bản trước được tự động chuyển vào đây
+- Tìm con trỏ nhanh: bấm Ctrl + Alt + F hoặc lắc chuột qua lại thật nhanh, con trỏ phóng to và tỏa vòng sáng trong khoảng 1 giây. Có thể tắt "Lắc chuột để tìm" và đổi phím trong tab Tùy chọn
 
-✦ New in 1.8.0: EzCursor cursor set
-- 12 new game-style cursors: Neon Crosshair, Blade, Crystal Arrow, Gem, Rune, Energy Orb, Flame, Spear, Feather, Star, Arrow Shot, Neon Arrow
-- The Library now has two groups: EzCursor set and Bibata
-- EzCursor cursors (including Liquid Drop and Pink Shard) can now be recolored with the Custom theme or the color hotkeys
-- More detailed error log
+✦ New in 1.9.0
+- Your cursors: a new "Yours" group in the Library keeps every cursor you add (PNG, animated GIF, .cur, .ani). Click "+ Add cursor" to add one, click a tile to use it, tint or delete it. Images uploaded in earlier versions are moved here automatically
+- Find your cursor: press Ctrl + Alt + F or shake the mouse quickly and the cursor grows with a glowing ring for about a second. "Shake to find" and the hotkey can be changed in the Options tab

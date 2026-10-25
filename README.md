@@ -14,7 +14,8 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 ## Tính năng
 
 - Đổi màu, hình dạng (mũi tên, vòng tròn, dấu thập, chấm, kim cương) và kích thước con trỏ
-- Dùng ảnh PNG/GIF động hoặc file con trỏ Windows `.cur`, `.ani` làm con trỏ, có thể tô màu cho ảnh
+- **Con trỏ của bạn**: lưu nhiều ảnh PNG/GIF động hoặc file con trỏ Windows `.cur`, `.ani` trong Bộ sưu tập, bấm là dùng, có thể tô màu
+- **Tìm con trỏ nhanh**: bấm Ctrl + Alt + F hoặc lắc chuột qua lại, con trỏ phóng to và tỏa vòng sáng
 - **Bộ EzCursor** gồm 14 con trỏ phong cách game (Liquid Drop, Mảnh hồng, Tâm ngắm Neon, Mũi kiếm, Mũi tên Pha lê, Viên ngọc, Ký tự Rune, Cầu năng lượng, Ngọn lửa, Mũi giáo, Lông vũ, Ngôi sao, Mũi tên Bắn, Mũi tên Neon), dùng màu gốc hoặc đổi sang màu bất kỳ
 - Bộ sưu tập con trỏ **Bibata** với các chủ đề Amber, Classic, Ice hoặc màu tùy chỉnh, kiểu Modern / Original, cho cả người thuận tay trái
 - Chỉ hiện trong những game / ứng dụng bạn chọn, ra ngoài thì con trỏ trở lại bình thường; có sẵn gợi ý các game ARPG phổ biến
@@ -37,6 +38,7 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 | Ctrl + Alt + R | Đổi hình dạng |
 | Ctrl + Alt + 1..5 | Đổi màu |
 | Ctrl + Alt + Q | Thoát |
+| Ctrl + Alt + F | Tìm con trỏ (phóng to + vòng sáng) |
 
 Có thể đổi phím tắt trong tab **Tùy chọn** (bấm vào ô phím tắt).
 

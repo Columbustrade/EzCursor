@@ -44,7 +44,7 @@ import pystray
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageSequence, ImageTk
 
 APP_NAME = "EzCursor"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
 GITHUB_REPO = "ezcursor/EzCursor"
@@ -280,7 +280,9 @@ OLD_DIR = APPDATA / "ConTroMau"          # thư mục của bản cũ
 APP_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = APP_DIR / "config.json"
 SHOW_FLAG = APP_DIR / "show.flag"
-QUIT_FLAG = APP_DIR / "quit.flag"   # bộ cài dùng để yêu cầu thoát
+QUIT_FLAG = APP_DIR / "quit.flag"
+MY_DIR = APP_DIR / "my_cursors"        # "Con trỏ của bạn" (1.9.0)
+MY_EXTS = {".png", ".gif", ".webp", ".ico", ".cur", ".ani", ".bmp", ".jpg", ".jpeg"}   # bộ cài dùng để yêu cầu thoát
 
 TRANSPARENT = "#010101"
 PRESET_COLORS = ["#ff2828", "#28ff28", "#00c8ff", "#ffe600", "#ff00dc"]
@@ -322,11 +324,13 @@ DEFAULT_CFG = {
     "skipped_version": "",
     "language": "vi",
     "dpi_scale": False,
+    "find_shake": True,
     "profiles": [],      # hồ sơ riêng: [{"name": ..., "exes": [...], "style": {...}}]
     "hotkeys": {
         "toggle": {"mods": ["ctrl", "alt"], "vk": 0x48},   # H
         "shape": {"mods": ["ctrl", "alt"], "vk": 0x52},    # R
         "quit": {"mods": ["ctrl", "alt"], "vk": 0x51},     # Q
+        "find": {"mods": ["ctrl", "alt"], "vk": 0x46},     # F
         "color": {"mods": ["ctrl", "alt"]},                # + phím số 1..5
     },
 }
@@ -414,9 +418,49 @@ def clean_style(cfg):
     for k in ("tint_image", "glow", "cursor_sparkle", "hold_left", "hold_right"):
         cfg[k] = bool(cfg[k])
     if cfg["image"] and not Path(cfg["image"]).exists():
-        alt = APP_DIR / Path(cfg["image"]).name
-        cfg["image"] = str(alt) if alt.exists() else ""
+        name = Path(cfg["image"]).name
+        alt = next((d / name for d in (MY_DIR, APP_DIR) if (d / name).exists()), None)
+        cfg["image"] = str(alt) if alt else ""
     return cfg
+
+
+def my_cursor_files():
+    """Các con trỏ người dùng đã thêm, mới nhất ở cuối."""
+    try:
+        files = [f for f in MY_DIR.iterdir() if f.is_file() and f.suffix.lower() in MY_EXTS]
+    except OSError:
+        return []
+    return sorted(files, key=lambda f: f.stat().st_mtime)
+
+
+def unique_my_path(name):
+    stem = "".join(ch if ch.isalnum() or ch in "-_ " else "-" for ch in Path(name).stem).strip() or "cursor"
+    ext = Path(name).suffix.lower()
+    dest, i = MY_DIR / f"{stem}{ext}", 2
+    while dest.exists():
+        dest, i = MY_DIR / f"{stem}-{i}{ext}", i + 1
+    return dest
+
+
+def migrate_my_cursors(cfg):
+    """Đưa ảnh tải lên ở các bản trước (custom*.*) vào "Con trỏ của bạn" và sửa đường dẫn trong cài đặt."""
+    try:
+        MY_DIR.mkdir(parents=True, exist_ok=True)
+        moved = {}
+        for f in APP_DIR.glob("custom*.*"):
+            if f.is_file() and f.suffix.lower() in MY_EXTS:
+                dest = unique_my_path(f.name)
+                shutil.move(str(f), str(dest))
+                moved[f.name.lower()] = str(dest)
+        if not moved:
+            return
+        styles = [cfg] + [pr.get("style", {}) for pr in cfg.get("profiles", []) if isinstance(pr, dict)]
+        for st in styles:
+            img = st.get("image") or ""
+            if img and Path(img).name.lower() in moved:
+                st["image"] = moved[Path(img).name.lower()]
+    except Exception:
+        pass
 
 
 def load_cfg():
@@ -443,6 +487,8 @@ def load_cfg():
             continue
     cfg["profiles"] = profiles
     cfg["dpi_scale"] = bool(cfg.get("dpi_scale"))
+    cfg["find_shake"] = bool(cfg.get("find_shake", True))
+    migrate_my_cursors(cfg)
     cfg["hotkeys"] = clean_hotkeys(cfg.get("hotkeys"))
     if cfg["language"] not in dict(LANGUAGES):
         cfg["language"] = "vi"
@@ -598,6 +644,12 @@ TR_EN = {
     "Trùng với phím của: ": "Already used by: ",
     # 1.6.0
     "Đang chỉnh": "Editing", "Mặc định (mọi game)": "Default (all games)",
+    # 1.9.0
+    "Của bạn": "Yours", "Tô màu": "Tinted", "+ Thêm con trỏ": "+ Add cursor", "Xóa con trỏ này": "Delete this cursor",
+    "Xóa con trỏ \"{n}\" khỏi bộ sưu tập?": "Remove the cursor \"{n}\" from your library?",
+    "Chưa có con trỏ nào. Bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF hoặc file con trỏ .cur, .ani.":
+        "No cursors yet. Click \"+ Add cursor\" to add a PNG, GIF or .cur / .ani cursor file.",
+    "Tìm con trỏ": "Find cursor", "Lắc chuột để tìm": "Shake to find",
     # 1.8.0
     "Bộ EzCursor": "EzCursor set", "Màu gốc": "Original",
     "Tâm ngắm Neon": "Neon Crosshair",
@@ -689,7 +741,7 @@ def tint_image(im, color):
 
 # ---------------------------------------------------------------- Phím tắt tùy chỉnh
 HOTKEY_MODS = [("ctrl", VK_CONTROL, "Ctrl"), ("alt", VK_MENU, "Alt"), ("shift", VK_SHIFT, "Shift")]
-HOTKEY_ACTIONS = ["toggle", "shape", "color", "quit"]
+HOTKEY_ACTIONS = ["toggle", "shape", "color", "quit", "find"]
 _VK_NAMES = {0x20: "Space", 0x21: "PgUp", 0x22: "PgDn", 0x23: "End", 0x24: "Home", 0x2D: "Ins", 0x2E: "Del",
              0x13: "Pause", 0xBA: ";", 0xBB: "=", 0xBC: ",", 0xBD: "-", 0xBE: ".", 0xBF: "/", 0xC0: "`",
              0xDB: "[", 0xDC: "\\", 0xDD: "]", 0xDE: "'"}
@@ -1753,6 +1805,15 @@ class App:
         self.variants = {}          # None / "left" / "right" -> (ảnh, điểm click, màu quầng)
         self.frame_sets = None      # các bộ khung hình động theo trạng thái giữ chuột
         self.hold_state = None
+        self.shown_img = None       # ảnh con trỏ đang hiển thị (không tính hiệu ứng tìm con trỏ)
+        self.find_t0 = None         # thời điểm bắt đầu hiệu ứng tìm con trỏ
+        self.find_hot = None
+        self.find_ring_only = False
+        self.find_cool = 0.0
+        self.sh_last_x = None
+        self.sh_dir = 0
+        self.sh_seg = 0
+        self.sh_rev = []
         self.quitting = False
         self.safe_mode = False
         self.err_times = []
@@ -1944,14 +2005,6 @@ class App:
             name, i = f"{title} {i}", i + 1
         st = {k: self.cfg.base[k] for k in STYLE_KEYS}
         st = json.loads(json.dumps(st))
-        if st["image"]:      # mỗi hồ sơ giữ bản sao ảnh riêng
-            src = Path(st["image"])
-            dest = APP_DIR / f"custom-{slug(name)}{src.suffix.lower()}"
-            try:
-                shutil.copyfile(src, dest)
-                st["image"] = str(dest)
-            except OSError:
-                st["image"] = ""
         pr = {"name": name, "exes": list(exes), "style": st}
         self.cfg["profiles"].append(pr)
         added = [e for e in exes if e.lower() not in self.app_set]
@@ -2203,7 +2256,7 @@ class App:
         self.page_top(page, "BỘ SƯU TẬP", "Con trỏ của EzCursor và bộ Bibata. Bấm vào con trỏ muốn dùng.", (0, 12))
         self.bib_tiles, self.own_tiles = {}, {}
         if getattr(self, "lib_view", None) is None:
-            self.lib_view = "bibata" if self.cfg["shape"] == "Bibata" else "ez"
+            self.lib_view = {"Bibata": "bibata", "Ảnh tải lên": "mine"}.get(self.cfg["shape"], "ez")
         has_bib = BIBATA_DIR.exists()
 
         seg_kw = dict(height=34, font=self.F.b(12, strong=True), fg_color=FIELD, unselected_color=FIELD,
@@ -2211,8 +2264,10 @@ class App:
                       selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
         head = ctk.CTkFrame(page, fg_color="transparent")
         head.pack(fill="x", pady=(0, 10))
-        self.view_map = {T("Bộ EzCursor"): "ez", "Bibata": "bibata"}
-        self.view_seg = ctk.CTkSegmentedButton(head, values=list(self.view_map) if has_bib else [T("Bộ EzCursor")],
+        self.view_map = {T("Bộ EzCursor"): "ez", "Bibata": "bibata", T("Của bạn"): "mine"}
+        if not has_bib:
+            del self.view_map["Bibata"]
+        self.view_seg = ctk.CTkSegmentedButton(head, values=list(self.view_map),
                                                command=lambda v: self.set_lib_view(self.view_map[v]),
                                                **dict(seg_kw, height=36, font=self.F.b(13, strong=True)))
         self.view_seg.pack(side="left")
@@ -2224,9 +2279,21 @@ class App:
         self.caps(top, "CHỦ ĐỀ").pack(anchor="w")
         self.chip_rows = {}
         self.theme_buttons, self.own_theme_buttons = {}, {}
-        for view in ("ez", "bibata"):
+        for view in ("ez", "bibata", "mine"):
             row = ctk.CTkFrame(top, fg_color="transparent")
             self.chip_rows[view] = row
+        self.mine_theme_buttons = {}
+        for key, label in (("original", T("Màu gốc")), ("tint", T("Tô màu"))):
+            b = ctk.CTkButton(self.chip_rows["mine"], text=label, height=40, width=130, corner_radius=10,
+                              border_width=1, font=self.F.b(13, strong=True), compound="left",
+                              command=lambda k=key: self.set_mine_tint(k == "tint"))
+            b.pack(side="left", padx=(0, 8))
+            self.mine_theme_buttons[key] = b
+        self.mine_del = ctk.CTkButton(head, text=T("Xóa con trỏ này"), command=self.delete_my_cursor, height=36,
+                                      corner_radius=10, border_width=1, border_color="#FF5A5A",
+                                      fg_color=mix(CARD, "#FF5A5A", 0.10), hover_color=mix(CARD, "#FF5A5A", 0.22),
+                                      text_color="#FF8A8A", font=self.F.b(12, strong=True),
+                                      image=ctk.CTkImage(simple_icon("trash", "#FF8A8A", 32), size=(14, 14)))
         own_themes = [("original", T("Màu gốc")), ("custom", T("Tùy chỉnh"))]
         for key, label in own_themes:
             b = ctk.CTkButton(self.chip_rows["ez"], text=label, height=40, width=130, corner_radius=10,
@@ -2281,11 +2348,16 @@ class App:
         grid.pack(fill="both", expand=True)
         cols = 5
         self.lib_grids = {}
-        for view in ("ez", "bibata"):
-            inner = ctk.CTkFrame(grid, fg_color="transparent")
+        for view in ("ez", "bibata", "mine"):
+            if view == "mine":
+                inner = ctk.CTkScrollableFrame(grid, fg_color="transparent", scrollbar_button_color=BORDER,
+                                               scrollbar_button_hover_color="#3A4152")
+            else:
+                inner = ctk.CTkFrame(grid, fg_color="transparent")
             for i in range(cols):
                 inner.grid_columnconfigure(i, weight=1, uniform="t")
             self.lib_grids[view] = inner
+        self.mine_tiles = {}
         for shape, label, _f, _h, _g in OWN_CURSORS:
             if own_image(shape) is None:
                 continue
@@ -2312,8 +2384,54 @@ class App:
         self.bib_link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/ful1e5/Bibata_Cursor"))
         self._lib_sig = None
         self._own_sig = None
+        self.rebuild_mine_tiles()
         self.show_lib_view()
         return page
+
+    def rebuild_mine_tiles(self):
+        """Dựng lại lưới "Của bạn": ô Thêm + mỗi con trỏ đã lưu."""
+        grid = getattr(self, "lib_grids", {}).get("mine")
+        if grid is None:
+            return
+        for w in grid.winfo_children():
+            w.destroy()
+        self.mine_tiles = {}
+        cols = 5
+        add = ctk.CTkButton(grid, text=T("+ Thêm con trỏ"), compound="top", height=94, width=10, corner_radius=12,
+                            border_width=1, border_color=mix(BORDER, CYAN, 0.5), fg_color=mix(CARD, CYAN, 0.06),
+                            hover_color=mix(CARD, CYAN, 0.16), text_color=CYAN_TEXT, font=self.F.b(12, strong=True),
+                            image=ctk.CTkImage(simple_icon("upload", CYAN_TEXT, 64), size=(30, 30)),
+                            command=self.upload_image)
+        add.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
+        files = my_cursor_files()
+        for i, f in enumerate(files, start=1):
+            try:
+                frames, _hot, _steps = load_cursor_file(str(f))
+                th = frames[0].copy()
+                th.thumbnail((112, 112), Image.LANCZOS)
+                pic = Image.new("RGBA", (112, 112), (0, 0, 0, 0))
+                pic.alpha_composite(th, ((112 - th.width) // 2, (112 - th.height) // 2))
+            except Exception:
+                continue
+            name = f.stem if len(f.stem) <= 16 else f.stem[:14] + "…"
+            b = ctk.CTkButton(grid, text=name, compound="top", height=94, width=10, corner_radius=12,
+                              border_width=1, font=self.F.b(12), image=ctk.CTkImage(pic, size=(56, 56)),
+                              command=lambda p=f: self.use_my_cursor(p))
+            b.grid(row=i // cols, column=i % cols, sticky="ew", padx=4, pady=4)
+            self.mine_tiles[str(f)] = b
+        if not files:
+            ctk.CTkLabel(grid, text=T("Chưa có con trỏ nào. Bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF "
+                                      "hoặc file con trỏ .cur, .ani."), font=self.F.b(12), text_color=TEXT2,
+                         wraplength=480, justify="left").grid(row=0, column=1, columnspan=4, sticky="w", padx=12)
+        self.update_library()
+
+    def set_mine_tint(self, on):
+        self.cfg["tint_image"] = on
+        try:
+            self.tint_var.set(on)
+        except AttributeError:
+            pass
+        self.refresh()
 
     def show_lib_view(self):
         v = self.lib_view
@@ -2329,6 +2447,10 @@ class App:
         else:
             self.bib_opts.pack_forget()
             self.bib_link.pack_forget()
+        if v == "mine":
+            self.mine_del.pack(side="right")
+        else:
+            self.mine_del.pack_forget()
 
     def set_lib_view(self, view):
         self.lib_view = view
@@ -2343,6 +2465,9 @@ class App:
 
     def set_bib_color(self, color):
         self.cfg["color"] = color
+        if self.lib_view == "mine":
+            self.set_mine_tint(True)
+            return
         if self.lib_view == "ez":
             self.cfg["own_theme"] = "custom"
             if self.cfg["shape"] not in OWN_BY_ID:
@@ -2384,7 +2509,7 @@ class App:
                     border_color=ACCENT if on else BORDER, text_color="#FFFFFF" if on else TEXT2)
 
     def update_library(self):
-        if not getattr(self, "own_tiles", None) and not getattr(self, "bib_tiles", None):
+        if getattr(self, "bib_swatches", None) is None:
             return
         c = self.cfg
         view = self.lib_view
@@ -2395,7 +2520,20 @@ class App:
         for key, b in self.theme_buttons.items():
             col = BIBATA_THEMES[key][1] if key in BIBATA_THEMES else c["color"]
             self._chip_style(b, key == c["bibata_theme"], self._chip_dot(col))
-        custom_on = (c["own_theme"] if view == "ez" else c["bibata_theme"]) == "custom"
+        for key, b in getattr(self, "mine_theme_buttons", {}).items():
+            img = (self._chip_dot(c["color"]) if key == "tint" or own_image("EzDrop") is None
+                   else ctk.CTkImage(own_image("EzDrop").resize((32, 32), Image.LANCZOS), size=(16, 16)))
+            self._chip_style(b, (key == "tint") == bool(c["tint_image"]), img)
+        mine_sel = c["image"] if c["shape"] == "Ảnh tải lên" else None
+        for path, b in getattr(self, "mine_tiles", {}).items():
+            on = path == mine_sel
+            b.configure(fg_color=mix(CARD, ACCENT, 0.16) if on else FIELD,
+                        hover_color=mix(CARD, ACCENT, 0.24) if on else "#161A23",
+                        border_color=ACCENT if on else BORDER, text_color="#FFFFFF" if on else TEXT2)
+        if getattr(self, "mine_del", None):
+            self.mine_del.configure(state="normal" if mine_sel and mine_sel in self.mine_tiles else "disabled")
+        custom_on = {"ez": c["own_theme"] == "custom", "bibata": c["bibata_theme"] == "custom",
+                     "mine": bool(c["tint_image"])}.get(view, False)
         known = set()
         for col, b in self.bib_swatches.items():
             known.add(col.lower())
@@ -2584,10 +2722,12 @@ class App:
             dt = min(0.05, now - self.fx_t)
             self.fx_t = now
             c = self.cfg
+            if self.find_t0 is not None:
+                self.find_frame(now)
             if self.cursor_frames and self.active and now * 1000 >= self.cf_next:
                 self.cf_idx = (self.cf_idx + 1) % len(self.cursor_frames)
                 self.cf_next = now * 1000 + self.cursor_durations[self.cf_idx]
-                self.ovl.set_image(self.cursor_frames[self.cf_idx])
+                self.show_img(self.cursor_frames[self.cf_idx])
             on = c["fx_trail"] != "off" or c["fx_click"] != "off"
             want = on and (self.active or now < self.fx_test_until)
             if want or self.fx.busy():
@@ -2732,24 +2872,36 @@ class App:
                      text_color=MUTED).pack(side="right", padx=8)
         grid = ctk.CTkFrame(hk, fg_color="transparent")
         grid.pack(fill="x", padx=12, pady=(0, 12))
-        grid.grid_columnconfigure((0, 1), weight=1, uniform="h")
+        grid.grid_columnconfigure((0, 1, 2), weight=1, uniform="h")
         self.hotkey_caps = {}
-        keys = [("toggle", "Bật / tắt"), ("shape", "Đổi hình dạng"), ("color", "Đổi màu"), ("quit", "Thoát")]
+        keys = [("toggle", "Bật / tắt"), ("shape", "Đổi hình dạng"), ("color", "Đổi màu"), ("quit", "Thoát"),
+                ("find", "Tìm con trỏ")]
         for i, (act, desc) in enumerate(keys):
             cell = ctk.CTkFrame(grid, fg_color=FIELD, border_color=LINE, border_width=1, corner_radius=10,
                                 cursor="hand2")
-            cell.grid(row=i // 2, column=i % 2, sticky="ew", padx=4, pady=4)
+            cell.grid(row=i // 3, column=i % 3, sticky="ew", padx=4, pady=4)
             lbl = ctk.CTkLabel(cell, text=T(desc), font=self.F.b(13), text_color="#C9CFDB")
-            lbl.pack(side="left", padx=12, pady=10)
+            lbl.pack(side="left", padx=(12, 4), pady=10)
             caps = ctk.CTkFrame(cell, fg_color="transparent")
-            caps.pack(side="right", padx=10)
+            caps.pack(side="right", padx=(0, 8))
             self.hotkey_caps[act] = caps
             for w in (cell, lbl, caps):
                 w.bind("<Button-1>", lambda e, a=act: self.capture_hotkey(a))
                 w.bind("<Enter>", lambda e, c=cell: c.configure(border_color=ACCENT))
                 w.bind("<Leave>", lambda e, c=cell: c.configure(border_color=LINE))
+        cell = ctk.CTkFrame(grid, fg_color=FIELD, border_color=LINE, border_width=1, corner_radius=10)
+        cell.grid(row=1, column=2, sticky="ew", padx=4, pady=4)
+        ctk.CTkLabel(cell, text=T("Lắc chuột để tìm"), font=self.F.b(13), text_color="#C9CFDB").pack(
+            side="left", padx=(12, 4), pady=10)
+        self.shake_var = tk.BooleanVar(value=self.cfg["find_shake"])
+        self.switch(cell, self.shake_var, self.set_find_shake).pack(side="right", padx=(0, 8))
         self.update_hotkey_ui()
         return page
+
+    def set_find_shake(self):
+        self.cfg["find_shake"] = bool(self.shake_var.get())
+        self.sh_rev = []
+        self.save()
 
     # ------------------------------------------------------------ Phím tắt
     def update_hotkey_ui(self):
@@ -2772,7 +2924,8 @@ class App:
 
     def hotkey_conflict(self, act, new):
         """Tên hành động đang dùng tổ hợp phím này (nếu trùng)."""
-        names = {"toggle": "Bật / tắt", "shape": "Đổi hình dạng", "color": "Đổi màu", "quit": "Thoát"}
+        names = {"toggle": "Bật / tắt", "shape": "Đổi hình dạng", "color": "Đổi màu", "quit": "Thoát",
+                 "find": "Tìm con trỏ"}
         combos = {}
         for a, b in self.cfg["hotkeys"].items():
             b = new if a == act else b
@@ -2987,7 +3140,7 @@ class App:
         self.frame_sets = None
         self.cursor_durations = None
         self.preview_photos = None
-        self.ovl.set_image(self.variants.get(self.hold_state, self.composed)[0])
+        self.show_img(self.variants.get(self.hold_state, self.composed)[0])
         if getattr(self, "_cf_job", None):
             self.ov.after_cancel(self._cf_job)
             self._cf_job = None
@@ -3020,7 +3173,7 @@ class App:
         self.frame_sets = sets
         self.cursor_frames, self.cursor_durations = sets.get(self.hold_state, frames), durs
         self.cf_idx, self.cf_next = 0, 0.0
-        self.ovl.set_image(self.cursor_frames[0])
+        self.show_img(self.cursor_frames[0])
         if self.active:
             self.move_overlay()
         self.pv_idx, self.pv_next = 0, 0.0
@@ -3042,7 +3195,7 @@ class App:
         self.cf_idx, self.cf_next = 0, 0.0
         self.pv_idx, self.pv_next = 0, 0.0
         self.ov_hot = (hot[0] + pad, hot[1] + pad)
-        self.ovl.set_image(self.cursor_frames[0])
+        self.show_img(self.cursor_frames[0])
         if self.active:
             self.move_overlay()
         self.preview_photos = [ImageTk.PhotoImage(fr, master=self.ov) for fr in sets[None]]
@@ -3091,9 +3244,9 @@ class App:
         key = state if state in self.variants else None
         if self.frame_sets:
             self.cursor_frames = self.frame_sets.get(key) or self.frame_sets[None]
-            self.ovl.set_image(self.cursor_frames[self.cf_idx % len(self.cursor_frames)])
+            self.show_img(self.cursor_frames[self.cf_idx % len(self.cursor_frames)])
         elif self.variants:
-            self.ovl.set_image(self.variants.get(key, self.composed)[0])
+            self.show_img(self.variants.get(key, self.composed)[0])
 
     def update_preview(self):
         c = self.cfg
@@ -3381,28 +3534,56 @@ class App:
                        (T("Con trỏ Windows"), "*.cur *.ani"), (T("Tất cả"), "*.*")])
         if not path:
             return
-        stem = "custom" if self.cfg.target is self.cfg.base else "custom-" + slug(self.profile_name_of_target())
-        dest = APP_DIR / (stem + Path(path).suffix.lower())
         try:
+            load_cursor_file(path)                    # thử đọc trước khi lưu
+        except Exception as e:
+            messagebox.showerror(T("Lỗi"), T("Không mở được ảnh:") + f"\n{e}", parent=self.win)
+            return
+        try:
+            MY_DIR.mkdir(parents=True, exist_ok=True)
+            dest = unique_my_path(Path(path).name)
             shutil.copyfile(path, dest)
         except Exception as e:
             messagebox.showerror(T("Lỗi"), T("Không sao chép được ảnh:") + f"\n{e}", parent=self.win)
             return
-        for old in APP_DIR.glob(stem + ".*"):        # xóa ảnh cũ khác đuôi
-            if old != dest:
-                try:
-                    old.unlink()
-                except OSError:
-                    pass
-        if self.load_image(str(dest)):
-            self.cfg["image"] = str(dest)
-            self.img_label.configure(text=Path(path).name)
-            if self.src_hot is not None:
-                self.cfg["hotspot"] = "Theo file"
-            elif self.cfg["hotspot"] == "Theo file":
-                self.cfg["hotspot"] = HOTSPOTS[0]
-            self.hot_seg.set(T(self.cfg["hotspot"]))
-            self.set_shape("Ảnh tải lên")
+        self.use_my_cursor(dest)
+        self.rebuild_mine_tiles()
+
+    def use_my_cursor(self, path):
+        """Dùng một con trỏ trong "Con trỏ của bạn"."""
+        path = Path(path)
+        if not self.load_image(str(path)):
+            return
+        self.cfg["image"] = str(path)
+        self.img_label.configure(text=path.name)
+        if self.src_hot is not None:
+            self.cfg["hotspot"] = "Theo file"
+        elif self.cfg["hotspot"] == "Theo file":
+            self.cfg["hotspot"] = HOTSPOTS[0]
+        self.hot_seg.set(T(self.cfg["hotspot"]))
+        self.set_shape("Ảnh tải lên")
+
+    def delete_my_cursor(self):
+        img = self.cfg["image"]
+        if not (self.cfg["shape"] == "Ảnh tải lên" and img and Path(img).parent == MY_DIR):
+            return
+        if not messagebox.askyesno(APP_NAME, T("Xóa con trỏ \"{n}\" khỏi bộ sưu tập?").format(n=Path(img).stem),
+                                   parent=self.win):
+            return
+        try:
+            Path(img).unlink()
+        except OSError:
+            pass
+        for st in [self.cfg.base] + [pr["style"] for pr in self.cfg["profiles"]]:
+            if st.get("image") == img:
+                st["image"] = ""
+                if st.get("shape") == "Ảnh tải lên":
+                    st["shape"] = "EzDrop"
+        self.img_cache.clear()
+        self.clear_image()
+        self.img_label.configure(text=T("(chưa có ảnh)"))
+        self.rebuild_mine_tiles()
+        self.refresh()
 
     def profile_name_of_target(self):
         for pr in self.cfg["profiles"]:
@@ -3430,14 +3611,101 @@ class App:
             return False
         return True
 
+    def show_img(self, im):
+        """Đặt ảnh con trỏ; trong lúc hiệu ứng tìm con trỏ chạy thì chỉ ghi nhớ, vẽ lại khi xong."""
+        self.shown_img = im
+        if self.find_t0 is None:
+            self.ovl.set_image(im)
+
     def move_overlay(self, only_if_moved=False):
         pt = wintypes.POINT()
         user32.GetCursorPos(ctypes.byref(pt))
-        key = (pt.x, pt.y, self.ov_hot)
+        hot = self.find_hot or self.ov_hot
+        key = (pt.x, pt.y, hot)
         if only_if_moved and key == self.last_move:
             return
         self.last_move = key
-        self.ovl.move(pt.x - self.ov_hot[0], pt.y - self.ov_hot[1])
+        self.ovl.move(int(pt.x - hot[0]), int(pt.y - hot[1]))
+
+    # ------------------------------------------------------------ Tìm con trỏ nhanh
+    FIND_TIME = 0.9
+
+    def start_find(self):
+        """Phóng to con trỏ + tỏa vòng sáng ~1 giây để tìm thấy con trỏ ngay."""
+        if not self.enabled:
+            return
+        self.find_t0 = time.perf_counter()
+        self.find_ring_only = not self.active
+        self.find_cool = self.find_t0 + 1.5
+
+    def find_frame(self, now):
+        p = (now - self.find_t0) / self.FIND_TIME
+        if p >= 1:
+            self.end_find()
+            return
+        base = None if self.find_ring_only else self.shown_img
+        hot = self.ov_hot
+        size = self.eff_size()
+        bw = max(base.size) if base is not None else size
+        bump = math.sin(math.pi * min(1.0, p / 0.9)) ** 0.7
+        k = 1 + 1.5 * bump
+        C = int(bw * 3.6) + 8
+        C -= C % 2
+        cv = Image.new("RGBA", (C, C), (0, 0, 0, 0))
+        d = ImageDraw.Draw(cv)
+        col = _rgb(self.glow_color())
+        lw = max(4, size // 10)
+        for delay in (0.0, 0.28):
+            q = (p - delay) / (1 - delay)
+            if 0 <= q <= 1:
+                r = size * 0.45 + q * (C / 2 - lw - size * 0.45)
+                a = int(255 * (1 - q) ** 1.3)
+                d.ellipse([C / 2 - r, C / 2 - r, C / 2 + r, C / 2 + r], outline=col + (a,), width=lw)
+                d.ellipse([C / 2 - r - lw, C / 2 - r - lw, C / 2 + r + lw, C / 2 + r + lw],
+                          outline=(255, 255, 255, a // 3), width=max(1, lw // 2))
+        if base is not None:
+            sw, sh = max(1, round(base.width * k)), max(1, round(base.height * k))
+            big = base.resize((sw, sh), Image.BILINEAR)
+            ox, oy = round(C / 2 - hot[0] * k), round(C / 2 - hot[1] * k)
+            cv.alpha_composite(big, (max(0, ox), max(0, oy)),
+                               (max(0, -ox), max(0, -oy)))
+        self.ovl.set_image(cv)
+        self.find_hot = (C // 2, C // 2)
+        if not self.ovl.visible:
+            self.ovl.show(True)
+        self.move_overlay()
+
+    def end_find(self):
+        self.find_t0 = None
+        self.find_hot = None
+        if self.shown_img is not None:
+            self.ovl.set_image(self.shown_img)
+        if self.find_ring_only and not self.active:
+            self.ovl.show(False)
+        self.find_ring_only = False
+        self.move_overlay()
+
+    def check_shake(self, now):
+        """Lắc chuột qua lại nhanh (≥4 lần đổi hướng trong 0,8 giây) thì tìm con trỏ."""
+        pt = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        if self.sh_last_x is None:
+            self.sh_last_x = pt.x
+            return
+        dx = pt.x - self.sh_last_x
+        self.sh_last_x = pt.x
+        if dx:
+            sign = 1 if dx > 0 else -1
+            if sign == self.sh_dir:
+                self.sh_seg += abs(dx)
+            else:
+                if self.sh_seg >= 60 * self.cur_scale:
+                    self.sh_rev.append(now)
+                self.sh_dir, self.sh_seg = sign, abs(dx)
+        self.sh_rev = [t for t in self.sh_rev if now - t < 0.8]
+        if len(self.sh_rev) >= 4 and now > self.find_cool and self.find_t0 is None:
+            self.sh_rev = []
+            self.start_find()
 
     def hide_to_tray(self):
         self.win.withdraw()
@@ -3500,7 +3768,7 @@ class App:
                                      "Danh sách game, con trỏ, hiệu ứng và ảnh đã tải lên sẽ bị xóa. "
                                      "EzCursor sẽ tự khởi động lại."), parent=self.win):
             return
-        for f in APP_DIR.glob("custom*.*"):
+        for f in list(APP_DIR.glob("custom*.*")) + list(my_cursor_files()):
             try:
                 f.unlink()
             except OSError:
@@ -3787,7 +4055,7 @@ class App:
         down = mods_down()
         if down & {"ctrl", "alt"}:
             hk = self.cfg["hotkeys"]
-            for act in ("toggle", "shape", "quit"):
+            for act in ("toggle", "shape", "quit", "find"):
                 if set(hk[act]["mods"]) == down and key_down(hk[act]["vk"]):
                     now.add(act)
             if set(hk["color"]["mods"]) == down:
@@ -3805,6 +4073,8 @@ class App:
                 self.next_shape()
             elif act == "toggle":
                 self.toggle()
+            elif act == "find":
+                self.start_find()
             elif act == "quit":
                 self.quit()
                 return False
@@ -3878,6 +4148,8 @@ class App:
                 self.use_style(self.style_of(self.edit_profile))
             if was_shell != self.shell_open:
                 self.update_status()
+        if self.active and self.cfg["find_shake"]:
+            self.check_shake(now)
         if self.active:
             l, r = mouse_buttons()
             c = self.cfg
