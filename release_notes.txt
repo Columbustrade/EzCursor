@@ -1,5 +1,13 @@
-✦ Trang chủ mới / New home
-- EzCursor có trang chủ riêng: https://ezcursor.github.io
-- Mã nguồn chuyển sang github.com/ezcursor/EzCursor, tự cập nhật trỏ về địa chỉ mới
-- EzCursor now has its own website: https://ezcursor.github.io
-- Source moved to github.com/ezcursor/EzCursor; auto-update uses the new address
+✦ Mới trong 1.5.0
+- Gợi ý sẵn các game ARPG phổ biến trong tab Ứng dụng (Last Epoch, Path of Exile 1/2, Diablo II/III/IV, Grim Dawn, Torchlight II, Titan Quest, Lost Ark)
+- Cảnh báo khi game chạy Fullscreen độc quyền: EzCursor trả lại con trỏ thật và nhắc chuyển sang Borderless/Windowed
+- Tự đặt phím tắt: bấm vào ô phím tắt trong tab Tùy chọn để đổi
+- Dùng được file con trỏ Windows .cur, .ani (con trỏ động) và ảnh GIF động, giữ đúng điểm click của file
+- Tùy chọn phóng con trỏ theo tỉ lệ màn hình (hữu ích khi dùng nhiều màn hình)
+
+✦ New in 1.5.0
+- Suggested popular ARPGs in the Apps tab
+- Fullscreen warning: EzCursor restores the real cursor and asks you to switch to Borderless/Windowed
+- Custom hotkeys: click a hotkey box in the Options tab to change it
+- Windows cursor files .cur and .ani (animated) and animated GIFs, keeping the file's click point
+- Option to scale the cursor with display scaling (handy for multi-monitor setups)

@@ -13,12 +13,14 @@ Cài đặt lưu tại %APPDATA%\\EzCursor
 import atexit
 import colorsys
 import ctypes
+import io
 import json
 import math
 import os
 import random
 import queue
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -34,10 +36,10 @@ from tkinter import colorchooser, filedialog, messagebox
 
 import customtkinter as ctk
 import pystray
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageTk
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageSequence, ImageTk
 
 APP_NAME = "EzCursor"
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.5.0"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
 GITHUB_REPO = "ezcursor/EzCursor"
@@ -85,7 +87,7 @@ WS_EX_LAYERED, WS_EX_TRANSPARENT = 0x80000, 0x20
 WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE = 0x80, 0x08000000
 HWND_TOPMOST = wintypes.HWND(-1)
 SWP_NOSIZE, SWP_NOACTIVATE = 0x1, 0x10
-VK_CONTROL, VK_MENU = 0x11, 0x12
+VK_CONTROL, VK_MENU, VK_SHIFT = 0x11, 0x12, 0x10
 ERROR_ALREADY_EXISTS = 183
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
@@ -235,7 +237,7 @@ QUIT_FLAG = APP_DIR / "quit.flag"   # bộ cài dùng để yêu cầu thoát
 TRANSPARENT = "#010101"
 PRESET_COLORS = ["#ff2828", "#28ff28", "#00c8ff", "#ffe600", "#ff00dc"]
 SHAPES = ["EzDrop", "EzPink", "Mũi tên", "Vòng tròn", "Dấu thập", "Chấm tròn", "Kim cương", "Ảnh tải lên", "Bibata"]
-HOTSPOTS = ["Giữa ảnh", "Góc trên trái"]
+HOTSPOTS = ["Giữa ảnh", "Góc trên trái", "Theo file"]
 ARROW_TIP = 3
 PREVIEW = 170
 
@@ -266,7 +268,28 @@ DEFAULT_CFG = {
     "last_update_check": 0,
     "skipped_version": "",
     "language": "vi",
+    "dpi_scale": False,
+    "hotkeys": {
+        "toggle": {"mods": ["ctrl", "alt"], "vk": 0x48},   # H
+        "shape": {"mods": ["ctrl", "alt"], "vk": 0x52},    # R
+        "quit": {"mods": ["ctrl", "alt"], "vk": 0x51},     # Q
+        "color": {"mods": ["ctrl", "alt"]},                # + phím số 1..5
+    },
 }
+
+# Game ARPG phổ biến: (tên hiển thị, các file chạy có thể gặp)
+ARPG_GAMES = [
+    ("Last Epoch", ["Last Epoch.exe"]),
+    ("Path of Exile 1 / 2", ["PathOfExile.exe", "PathOfExileSteam.exe", "PathOfExile_x64.exe",
+                             "PathOfExile_x64Steam.exe"]),
+    ("Diablo IV", ["Diablo IV.exe"]),
+    ("Diablo III", ["Diablo III64.exe", "Diablo III.exe"]),
+    ("Diablo II: Resurrected", ["D2R.exe"]),
+    ("Grim Dawn", ["Grim Dawn.exe"]),
+    ("Torchlight II", ["Torchlight2.exe"]),
+    ("Titan Quest", ["TQ.exe"]),
+    ("Lost Ark", ["LOSTARK.exe"]),
+]
 
 
 def migrate_old_version():
@@ -294,8 +317,12 @@ def migrate_old_version():
             pass
 
 
+def default_cfg():
+    return json.loads(json.dumps(DEFAULT_CFG))     # bản sao sâu
+
+
 def load_cfg():
-    cfg = dict(DEFAULT_CFG)
+    cfg = default_cfg()
     try:
         cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
     except Exception:
@@ -319,6 +346,8 @@ def load_cfg():
         cfg["fx_color"] = "cursor"
     if cfg["fx_density"] not in ("low", "mid", "high"):
         cfg["fx_density"] = "mid"
+    cfg["dpi_scale"] = bool(cfg.get("dpi_scale"))
+    cfg["hotkeys"] = clean_hotkeys(cfg.get("hotkeys"))
     if cfg["language"] not in dict(LANGUAGES):
         cfg["language"] = "vi"
     if not isinstance(cfg["apps"], list):
@@ -423,6 +452,26 @@ TR_EN = {
     "CÓ PHIÊN BẢN MỚI": "NEW VERSION AVAILABLE", "   (bạn đang dùng {v})": "   (you have {v})",
     "CÓ GÌ MỚI": "WHAT'S NEW", "(không có ghi chú)": "(no release notes)", "CẬP NHẬT NGAY": "UPDATE NOW",
     "MỞ TRANG TẢI VỀ": "OPEN DOWNLOAD PAGE", "Để sau": "Later", "Bỏ qua phiên bản này": "Skip this version",
+    # 1.5.0
+    "Theo file": "From file", "Phóng theo tỉ lệ màn hình": "Scale with display",
+    "GỢI Ý: GAME ARPG PHỔ BIẾN": "SUGGESTED: POPULAR ARPGS", " GỢI Ý ": " SUGGESTED ",
+    "●  FULLSCREEN": "●  FULLSCREEN",
+    "Game đang ở Fullscreen. Hãy chuyển sang Borderless hoặc Windowed.":
+        "The game is in Fullscreen. Switch it to Borderless or Windowed.",
+    "Game đang chạy Fullscreen nên EzCursor không vẽ được con trỏ. "
+    "Hãy chuyển game sang Borderless hoặc Windowed trong phần cài đặt đồ họa.":
+        "The game is running in Fullscreen, so EzCursor can't draw the cursor. "
+        "Switch the game to Borderless or Windowed in its graphics settings.",
+    "Ảnh hoặc con trỏ": "Images or cursors", "Con trỏ Windows": "Windows cursors",
+    "Mặc định": "Defaults", "Bấm vào một ô để đổi phím": "Click a box to change it",
+    "Đổi phím tắt": "Change hotkey", "Nhấn tổ hợp phím mới": "Press the new key combination",
+    "Nhấn Ctrl hoặc Alt (có thể thêm Shift) cùng một phím số từ 1 đến 5.":
+        "Hold Ctrl or Alt (optionally with Shift) and press a number key from 1 to 5.",
+    "Nhấn Ctrl hoặc Alt (có thể thêm Shift) cùng một phím chữ, số hoặc F1–F12.":
+        "Hold Ctrl or Alt (optionally with Shift) and press a letter, number or F1–F12 key.",
+    "Bấm Esc để hủy.": "Press Esc to cancel.", "Cần giữ Ctrl hoặc Alt.": "Hold Ctrl or Alt.",
+    "Đổi màu dùng các phím số 1–5.": "Color changes use number keys 1–5.",
+    "Trùng với phím của: ": "Already used by: ",
 }
 
 
@@ -486,6 +535,165 @@ def tint_image(im, color):
     out = Image.composite(colored, rgb, mask)
     out.putalpha(alpha)
     return out
+
+
+# ---------------------------------------------------------------- Phím tắt tùy chỉnh
+HOTKEY_MODS = [("ctrl", VK_CONTROL, "Ctrl"), ("alt", VK_MENU, "Alt"), ("shift", VK_SHIFT, "Shift")]
+HOTKEY_ACTIONS = ["toggle", "shape", "color", "quit"]
+_VK_NAMES = {0x20: "Space", 0x21: "PgUp", 0x22: "PgDn", 0x23: "End", 0x24: "Home", 0x2D: "Ins", 0x2E: "Del",
+             0x13: "Pause", 0xBA: ";", 0xBB: "=", 0xBC: ",", 0xBD: "-", 0xBE: ".", 0xBF: "/", 0xC0: "`",
+             0xDB: "[", 0xDC: "\\", 0xDD: "]", 0xDE: "'"}
+
+
+def vk_name(vk):
+    if 0x41 <= vk <= 0x5A or 0x30 <= vk <= 0x39:
+        return chr(vk)
+    if 0x70 <= vk <= 0x87:
+        return f"F{vk - 0x6F}"
+    if 0x60 <= vk <= 0x69:
+        return f"Num{vk - 0x60}"
+    return _VK_NAMES.get(vk, "")
+
+
+HOTKEY_VKS = [v for v in list(range(0x30, 0x3A)) + list(range(0x41, 0x5B)) + list(range(0x60, 0x6A))
+              + list(range(0x70, 0x88)) + list(_VK_NAMES)]
+
+
+def clean_hotkeys(hk):
+    """Kiểm tra phím tắt đọc từ file cài đặt; mục nào hỏng thì dùng mặc định."""
+    out = json.loads(json.dumps(DEFAULT_CFG["hotkeys"]))
+    if not isinstance(hk, dict):
+        return out
+    names = {m for m, _, _ in HOTKEY_MODS}
+    for act in HOTKEY_ACTIONS:
+        b = hk.get(act)
+        if not isinstance(b, dict):
+            continue
+        mods = [m for m in b.get("mods", []) if m in names] if isinstance(b.get("mods"), list) else []
+        if not ({"ctrl", "alt"} & set(mods)):
+            continue
+        if act == "color":
+            out[act] = {"mods": mods}
+        elif isinstance(b.get("vk"), int) and b["vk"] in HOTKEY_VKS:
+            out[act] = {"mods": mods, "vk": b["vk"]}
+    return out
+
+
+def hotkey_parts(binding, act):
+    """Các phím để hiển thị, vd ['Ctrl', 'Alt', 'H']."""
+    parts = [label for m, _, label in HOTKEY_MODS if m in binding["mods"]]
+    return parts + (["1–5"] if act == "color" else [vk_name(binding["vk"])])
+
+
+def mods_down():
+    return {m for m, vk, _ in HOTKEY_MODS if key_down(vk)}
+
+
+# ---------------------------------------------------------------- File con trỏ Windows (.cur / .ani)
+def _ico_entries(data):
+    reserved, typ, count = struct.unpack_from("<HHH", data, 0)
+    if reserved != 0 or typ not in (1, 2) or not 0 < count < 256:
+        raise ValueError("Không phải file .cur/.ico hợp lệ")
+    out = []
+    for i in range(count):
+        w, h, _c, _r, hx, hy, size, off = struct.unpack_from("<BBBBHHII", data, 6 + 16 * i)
+        out.append((w or 256, h or 256, hx, hy, size, off, typ))
+    return out
+
+
+def decode_cur(data):
+    """Ảnh lớn nhất trong file .cur/.ico và điểm click (None nếu là .ico)."""
+    w, h, hx, hy, size, off, typ = max(_ico_entries(data), key=lambda e: e[0] * e[1])
+    blob = data[off:off + size]
+    if blob[:8] == b"\x89PNG\r\n\x1a\n":
+        im = Image.open(io.BytesIO(blob)).convert("RGBA")
+    else:   # ảnh DIB: gói lại thành file .ico một ảnh để Pillow đọc được
+        head = struct.pack("<HHH", 0, 1, 1) + struct.pack("<BBBBHHII", w % 256, h % 256, 0, 0, 1, 32, size, 22)
+        im = Image.open(io.BytesIO(head + blob)).convert("RGBA")
+    if typ != 2:
+        return im, None
+    return im, (round(hx * im.width / w), round(hy * im.height / h))
+
+
+def decode_ani(data):
+    """Con trỏ động .ani: (danh sách ảnh, điểm click, [(chỉ số ảnh, thời gian ms), ...])."""
+    if data[:4] != b"RIFF" or data[8:12] != b"ACON":
+        raise ValueError("Không phải file .ani hợp lệ")
+
+    def chunks(start, end):
+        while start + 8 <= end:
+            cid = data[start:start + 4]
+            ln = struct.unpack_from("<I", data, start + 4)[0]
+            yield cid, start + 8, ln
+            start += 8 + ln + (ln & 1)
+
+    frames, rate, seq, jif = [], None, None, 6
+    for cid, pos, ln in chunks(12, len(data)):
+        if cid == b"anih" and ln >= 36:
+            jif = struct.unpack_from("<9I", data, pos)[7] or 6
+        elif cid == b"rate":
+            rate = list(struct.unpack_from(f"<{ln // 4}I", data, pos))
+        elif cid == b"seq ":
+            seq = list(struct.unpack_from(f"<{ln // 4}I", data, pos))
+        elif cid == b"LIST" and data[pos:pos + 4] == b"fram":
+            for c2, p2, l2 in chunks(pos + 4, pos + ln):
+                if c2 == b"icon":
+                    frames.append(decode_cur(data[p2:p2 + l2]))
+    if not frames:
+        raise ValueError("File .ani không có ảnh nào")
+    order = [i for i in (seq or range(len(frames))) if i < len(frames)] or [0]
+    steps = [(fi, max(16, round((rate[i] if rate and i < len(rate) else jif) * 1000 / 60)))
+             for i, fi in enumerate(order)]
+    return [f[0] for f in frames], frames[0][1], steps
+
+
+def load_cursor_file(path):
+    """Đọc ảnh hoặc file con trỏ: (danh sách ảnh RGBA, điểm click trong ảnh hoặc None, bước hoạt ảnh hoặc None)."""
+    ext = Path(path).suffix.lower()
+    data = Path(path).read_bytes()
+    if ext == ".ani":
+        return decode_ani(data)
+    if ext == ".cur":
+        im, hot = decode_cur(data)
+        return [im], hot, None
+    im = Image.open(io.BytesIO(data))
+    if getattr(im, "is_animated", False) and getattr(im, "n_frames", 1) > 1:
+        frames, steps = [], []
+        for i, fr in enumerate(ImageSequence.Iterator(im)):
+            frames.append(fr.convert("RGBA"))
+            steps.append((i, max(20, int(fr.info.get("duration", 100) or 100))))
+            if i >= 119:           # tối đa 120 khung hình
+                break
+        return frames, None, steps
+    return [im.convert("RGBA")], None, None
+
+
+# ---------------------------------------------------------------- Màn hình & Fullscreen
+user32.MonitorFromPoint.restype = wintypes.HANDLE
+user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+
+
+def monitor_scale(x, y):
+    """Tỉ lệ phóng (DPI / 96) của màn hình chứa điểm (x, y)."""
+    try:
+        mon = user32.MonitorFromPoint(wintypes.POINT(x, y), 2)       # MONITOR_DEFAULTTONEAREST
+        dx, dy = wintypes.UINT(), wintypes.UINT()
+        if ctypes.windll.shcore.GetDpiForMonitor(mon, 0, ctypes.byref(dx), ctypes.byref(dy)) == 0 and dx.value:
+            return max(1.0, min(4.0, dx.value / 96))
+    except Exception:
+        pass
+    return 1.0
+
+
+def fullscreen_exclusive():
+    """True khi có ứng dụng Direct3D đang chạy ở chế độ Fullscreen độc quyền."""
+    st = ctypes.c_int(0)
+    try:
+        if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(st)) == 0:
+            return st.value == 3             # QUNS_RUNNING_D3D_FULL_SCREEN
+    except Exception:
+        pass
+    return False
 
 
 def parse_version(v):
@@ -678,7 +886,7 @@ def simple_icon(kind, color, size=16):
     return _ss(draw, size)
 
 
-def render_shape(shape, color, size, img_rgba, hotspot):
+def render_shape(shape, color, size, img_rgba, hotspot, file_hot=None):
     """Vẽ con trỏ (khử răng cưa), trả về (ảnh RGBA, điểm click)."""
     S = 4
     n = size * S
@@ -717,11 +925,15 @@ def render_shape(shape, color, size, img_rgba, hotspot):
         w, h = img_rgba.size
         f = n / max(w, h)
         pic = img_rgba.resize((max(1, round(w * f)), max(1, round(h * f))), Image.LANCZOS)
-        pos = (0, 0) if hotspot == "Góc trên trái" else ((n - pic.width) // 2, (n - pic.height) // 2)
+        top_left = hotspot == "Góc trên trái" or (hotspot == "Theo file" and file_hot)
+        pos = (0, 0) if top_left else ((n - pic.width) // 2, (n - pic.height) // 2)
         im.alpha_composite(pic, pos)
     im = im.resize((size, size), Image.LANCZOS)
     if shape == "Mũi tên":
         hot = (round(3 * size / 64), round(3 * size / 64))
+    elif shape == "Ảnh tải lên" and hotspot == "Theo file" and file_hot:
+        k2 = size / max(img_rgba.size)
+        hot = (min(size - 1, round(file_hot[0] * k2)), min(size - 1, round(file_hot[1] * k2)))
     elif shape == "Ảnh tải lên" and hotspot == "Góc trên trái":
         hot = (0, 0)
     else:
@@ -1290,6 +1502,14 @@ class App:
         self.enabled = bool(self.cfg["enabled"])
         self.active = False
         self.src_img = None
+        self.src_frames = None      # khung hình của ảnh động (.ani / .gif)
+        self.src_steps = None
+        self.src_hot = None         # điểm click lấy từ file .cur / .ani
+        self.cur_scale = 1.0
+        self.fs_block = False       # game đang ở Fullscreen độc quyền
+        self.fs_checked = 0.0
+        self.fs_warned = set()
+        self.capturing = False
         self.img_tk = None
         self.prev_keys = set()
         self.tick_count = 0
@@ -1319,6 +1539,10 @@ class App:
         self.cursor_frames = None
         self.preview_photos = None
         self.cf_idx = 0
+        self.cf_next = 0.0
+        self.cursor_durations = None
+        self.pv_idx = 0
+        self.pv_next = 0.0
         self._cf_job = None
         self.shell_open = False
 
@@ -1463,7 +1687,9 @@ class App:
         ctk.CTkLabel(row, text=T("Bật EzCursor"), font=self.F.b(14, strong=True), text_color=TEXT).pack(side="left")
         self.enabled_var = tk.BooleanVar(value=self.enabled)
         self.switch(row, self.enabled_var, self.on_enabled_switch).pack(side="right")
-        ctk.CTkLabel(st, text="Ctrl + Alt + H", font=self.F.m(11), text_color=MUTED).pack(anchor="w", padx=14, pady=(4, 12))
+        self.toggle_hint = ctk.CTkLabel(st, text=" + ".join(hotkey_parts(self.cfg["hotkeys"]["toggle"], "toggle")),
+                                        font=self.F.m(11), text_color=MUTED)
+        self.toggle_hint.pack(anchor="w", padx=14, pady=(4, 12))
 
     def build_cursor_tab(self, parent):
         page = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1564,6 +1790,12 @@ class App:
         ctk.CTkLabel(row, text=T("Quầng sáng quanh con trỏ"), font=self.F.b(13), text_color=TEXT).pack(side="left")
         self.glow_var = tk.BooleanVar(value=self.cfg["glow"])
         self.switch(row, self.glow_var, self.set_glow).pack(side="right")
+
+        row = ctk.CTkFrame(inner, fg_color="transparent")
+        row.pack(fill="x", pady=(8, 0))
+        ctk.CTkLabel(row, text=T("Phóng theo tỉ lệ màn hình"), font=self.F.b(13), text_color=TEXT).pack(side="left")
+        self.dpi_var = tk.BooleanVar(value=self.cfg["dpi_scale"])
+        self.switch(row, self.dpi_var, self.set_dpi_scale).pack(side="right")
         return page
 
     def build_preview_canvas(self):
@@ -1878,9 +2110,9 @@ class App:
             dt = min(0.05, now - self.fx_t)
             self.fx_t = now
             c = self.cfg
-            self.fx_tick = getattr(self, "fx_tick", 0) + 1
-            if self.cursor_frames and self.active and self.fx_tick % 6 == 0:
+            if self.cursor_frames and self.active and now * 1000 >= self.cf_next:
                 self.cf_idx = (self.cf_idx + 1) % len(self.cursor_frames)
+                self.cf_next = now * 1000 + self.cursor_durations[self.cf_idx]
                 self.ovl.set_image(self.cursor_frames[self.cf_idx])
             on = c["fx_trail"] != "off" or c["fx_click"] != "off"
             want = on and (self.active or now < self.fx_test_until)
@@ -2012,21 +2244,146 @@ class App:
 
         hk = self.card(page)
         hk.pack(fill="x", pady=(12, 0))
-        self.caps(hk, "PHÍM TẮT").pack(anchor="w", padx=16, pady=(12, 6))
+        head = ctk.CTkFrame(hk, fg_color="transparent")
+        head.pack(fill="x", padx=16, pady=(10, 4))
+        self.caps(head, "PHÍM TẮT").pack(side="left")
+        ctk.CTkButton(head, text=T("Mặc định"), command=self.reset_hotkeys, width=10, height=24, corner_radius=6,
+                      fg_color="transparent", hover_color="#1A1E29", text_color=MUTED,
+                      font=self.F.b(12)).pack(side="right")
+        ctk.CTkLabel(head, text=T("Bấm vào một ô để đổi phím"), font=self.F.b(12),
+                     text_color=MUTED).pack(side="right", padx=8)
         grid = ctk.CTkFrame(hk, fg_color="transparent")
         grid.pack(fill="x", padx=12, pady=(0, 12))
         grid.grid_columnconfigure((0, 1), weight=1, uniform="h")
-        keys = [("Bật / tắt", "H"), ("Đổi hình dạng", "R"), ("Đổi màu", "1–5"), ("Thoát", "Q")]
-        for i, (desc, k) in enumerate(keys):
-            cell = ctk.CTkFrame(grid, fg_color=FIELD, border_color=LINE, border_width=1, corner_radius=10)
+        self.hotkey_caps = {}
+        keys = [("toggle", "Bật / tắt"), ("shape", "Đổi hình dạng"), ("color", "Đổi màu"), ("quit", "Thoát")]
+        for i, (act, desc) in enumerate(keys):
+            cell = ctk.CTkFrame(grid, fg_color=FIELD, border_color=LINE, border_width=1, corner_radius=10,
+                                cursor="hand2")
             cell.grid(row=i // 2, column=i % 2, sticky="ew", padx=4, pady=4)
-            ctk.CTkLabel(cell, text=T(desc), font=self.F.b(13), text_color="#C9CFDB").pack(side="left", padx=12, pady=10)
+            lbl = ctk.CTkLabel(cell, text=T(desc), font=self.F.b(13), text_color="#C9CFDB")
+            lbl.pack(side="left", padx=12, pady=10)
             caps = ctk.CTkFrame(cell, fg_color="transparent")
             caps.pack(side="right", padx=10)
-            for key in ("Ctrl", "Alt", k):
-                ctk.CTkLabel(caps, text=key, font=self.F.m(11), text_color=TEXT, fg_color="#181C26",
-                             corner_radius=6, width=10, height=24).pack(side="left", padx=2)
+            self.hotkey_caps[act] = caps
+            for w in (cell, lbl, caps):
+                w.bind("<Button-1>", lambda e, a=act: self.capture_hotkey(a))
+                w.bind("<Enter>", lambda e, c=cell: c.configure(border_color=ACCENT))
+                w.bind("<Leave>", lambda e, c=cell: c.configure(border_color=LINE))
+        self.update_hotkey_ui()
         return page
+
+    # ------------------------------------------------------------ Phím tắt
+    def update_hotkey_ui(self):
+        hk = self.cfg["hotkeys"]
+        for act, caps in getattr(self, "hotkey_caps", {}).items():
+            for w in caps.winfo_children():
+                w.destroy()
+            for key in hotkey_parts(hk[act], act):
+                k = ctk.CTkLabel(caps, text=key, font=self.F.m(11), text_color=TEXT, fg_color="#181C26",
+                                 corner_radius=6, width=10, height=24)
+                k.pack(side="left", padx=2)
+                k.bind("<Button-1>", lambda e, a=act: self.capture_hotkey(a))
+        if getattr(self, "toggle_hint", None):
+            self.toggle_hint.configure(text=" + ".join(hotkey_parts(hk["toggle"], "toggle")))
+
+    def reset_hotkeys(self):
+        self.cfg["hotkeys"] = json.loads(json.dumps(DEFAULT_CFG["hotkeys"]))
+        self.update_hotkey_ui()
+        self.save()
+
+    def hotkey_conflict(self, act, new):
+        """Tên hành động đang dùng tổ hợp phím này (nếu trùng)."""
+        names = {"toggle": "Bật / tắt", "shape": "Đổi hình dạng", "color": "Đổi màu", "quit": "Thoát"}
+        combos = {}
+        for a, b in self.cfg["hotkeys"].items():
+            b = new if a == act else b
+            mods = frozenset(b["mods"])
+            vks = range(0x31, 0x36) if a == "color" else [b["vk"]]
+            for vk in vks:
+                if (mods, vk) in combos and a != combos[(mods, vk)]:
+                    other = combos[(mods, vk)]
+                    return T(names[other if other != act else a])
+                combos[(mods, vk)] = a
+        return None
+
+    def capture_hotkey(self, act):
+        """Hộp thoại nhỏ chờ người dùng bấm tổ hợp phím mới."""
+        if self.capturing:
+            return
+        self.capturing = True
+        d = ctk.CTkToplevel(self.ov, fg_color=BG)
+        d.title(T("Đổi phím tắt"))
+        d.resizable(False, False)
+        d.attributes("-topmost", True)
+        d.transient(self.win)
+        frm = ctk.CTkFrame(d, fg_color="transparent")
+        frm.pack(fill="both", padx=22, pady=18)
+        hint = (T("Nhấn Ctrl hoặc Alt (có thể thêm Shift) cùng một phím số từ 1 đến 5.") if act == "color"
+                else T("Nhấn Ctrl hoặc Alt (có thể thêm Shift) cùng một phím chữ, số hoặc F1–F12."))
+        ctk.CTkLabel(frm, text=T("Nhấn tổ hợp phím mới"), font=self.F.h(18), text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(frm, text=hint, font=self.F.b(12), text_color=TEXT2, wraplength=360,
+                     justify="left").pack(anchor="w", pady=(4, 12))
+        live = ctk.CTkLabel(frm, text="…", font=self.F.m(16), text_color=ACCENT, height=36)
+        live.pack(anchor="w")
+        msg = ctk.CTkLabel(frm, text=T("Bấm Esc để hủy."), font=self.F.b(12), text_color=MUTED)
+        msg.pack(anchor="w", pady=(8, 0))
+        state = {"seen_clear": False}
+
+        def close():
+            self.capturing = False
+            self.prev_keys = {"*"}          # tránh kích hoạt phím vừa bấm
+            try:
+                d.destroy()
+            except tk.TclError:
+                pass
+
+        def poll():
+            if not d.winfo_exists():
+                self.capturing = False
+                return
+            mods = mods_down()
+            keys = [vk for vk in HOTKEY_VKS if key_down(vk)]
+            if not mods and not keys:
+                state["seen_clear"] = True
+            if key_down(0x1B):              # Esc
+                close()
+                return
+            labels = [label for m, _, label in HOTKEY_MODS if m in mods]
+            live.configure(text=" + ".join(labels + [vk_name(k) for k in keys[:1]]) or "…")
+            if state["seen_clear"] and keys:
+                vk = keys[0]
+                if not ({"ctrl", "alt"} & mods):
+                    msg.configure(text=T("Cần giữ Ctrl hoặc Alt."), text_color=AMBER)
+                elif act == "color" and not 0x31 <= vk <= 0x35:
+                    msg.configure(text=T("Đổi màu dùng các phím số 1–5."), text_color=AMBER)
+                else:
+                    new = {"mods": [m for m, _, _ in HOTKEY_MODS if m in mods]}
+                    if act != "color":
+                        new["vk"] = vk
+                    other = self.hotkey_conflict(act, new)
+                    if other:
+                        msg.configure(text=T("Trùng với phím của: ") + other, text_color=AMBER)
+                    else:
+                        self.cfg["hotkeys"][act] = new
+                        self.update_hotkey_ui()
+                        self.save()
+                        close()
+                        return
+                state["seen_clear"] = False
+            d.after(30, poll)
+
+        d.protocol("WM_DELETE_WINDOW", close)
+        try:   # đặt hộp thoại giữa cửa sổ chính
+            d.update_idletasks()
+            x = self.win.winfo_rootx() + (self.win.winfo_width() - d.winfo_width()) // 2
+            y = self.win.winfo_rooty() + (self.win.winfo_height() - d.winfo_height()) // 3
+            d.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except tk.TclError:
+            pass
+        d.after(100, d.lift)
+        d.after(150, d.focus_force)
+        d.after(200, poll)
 
     # ------------------------------------------------------------ Điều hướng & trạng thái
     def show_tab(self, key):
@@ -2064,6 +2421,8 @@ class App:
             return T("●  ĐANG HOẠT ĐỘNG"), GREEN, sub
         if self.shell_open:
             return T("●  TẠM DỪNG"), AMBER, T("Đang ở trên giao diện của Windows.")
+        if self.fs_block:
+            return T("●  FULLSCREEN"), AMBER, T("Game đang ở Fullscreen. Hãy chuyển sang Borderless hoặc Windowed.")
         if not self.cfg["apps"]:
             return T("●  CHƯA CHỌN GAME"), AMBER, T("Vào tab Ứng dụng để chọn game.")
         return T("●  ĐANG CHỜ GAME"), AMBER, T("Chờ: ") + ", ".join(self.cfg["apps"])
@@ -2086,7 +2445,7 @@ class App:
     def compose_cursor(self):
         """Ảnh con trỏ hoàn chỉnh dùng cho cả overlay lẫn xem trước: (ảnh, điểm click, màu quầng)."""
         c = self.cfg
-        s = c["size"]
+        s = self.eff_size()
         if own_image(c["shape"]) is not None:
             _, _, _, (hx, hy), glow_col = OWN_BY_ID[c["shape"]]
             im = own_image(c["shape"]).resize((s, s), Image.LANCZOS)
@@ -2104,10 +2463,19 @@ class App:
             if src is not None and c["tint_image"]:
                 src = tint_image(src, c["color"])
             glow_col = self.preview_color()
-            im, hot = render_shape(shape, glow_col, s, src, c["hotspot"])
+            im, hot = render_shape(shape, glow_col, s, src, c["hotspot"], self.src_hot)
         if c["glow"]:
             im, hot = add_glow(im, hot, glow_col)
         return im, hot, glow_col
+
+    def eff_size(self):
+        """Kích thước con trỏ thực tế (nhân tỉ lệ màn hình nếu bật)."""
+        s = self.cfg["size"]
+        return max(16, round(s * self.cur_scale)) if self.cfg["dpi_scale"] else s
+
+    def animated_image(self):
+        return (self.cfg["shape"] == "Ảnh tải lên" and self.src_frames is not None
+                and len(self.src_frames) > 1 and bool(self.src_steps))
 
     def bibata_variant(self):
         return self.cfg["bibata_style"] + ("-right" if self.cfg["bibata_hand"] == "left" else "")
@@ -2116,13 +2484,43 @@ class App:
         self.composed = self.compose_cursor()
         im, self.ov_hot, _ = self.composed
         self.cursor_frames = None
+        self.cursor_durations = None
         self.preview_photos = None
         self.ovl.set_image(im)
         if getattr(self, "_cf_job", None):
             self.ov.after_cancel(self._cf_job)
             self._cf_job = None
-        if self.cfg["cursor_sparkle"]:
+        if self.animated_image():
+            self._cf_job = self.ov.after(160, self.build_image_frames)
+        elif self.cfg["cursor_sparkle"]:
             self._cf_job = self.ov.after(160, self.build_cursor_frames)
+
+    def build_image_frames(self):
+        """Khung hình cho ảnh động (.ani / .gif), mỗi khung giữ đúng thời gian của file gốc."""
+        self._cf_job = None
+        if not self.animated_image():
+            return
+        keep = self.src_img
+        cache, frames, durs = {}, [], []
+        try:
+            for idx, ms in self.src_steps:
+                if idx not in cache:
+                    self.src_img = self.src_frames[idx]
+                    cache[idx] = self.compose_cursor()[0]
+                frames.append(cache[idx])
+                durs.append(ms)
+        finally:
+            self.src_img = keep
+        if not frames or len({f.size for f in frames}) != 1:
+            return
+        self.cursor_frames, self.cursor_durations = frames, durs
+        self.cf_idx, self.cf_next = 0, 0.0
+        self.ovl.set_image(frames[0])
+        if self.active:
+            self.move_overlay()
+        self.pv_idx, self.pv_next = 0, 0.0
+        photos = {}
+        self.preview_photos = [photos.setdefault(id(fr), ImageTk.PhotoImage(fr, master=self.ov)) for fr in frames]
 
     def build_cursor_frames(self):
         """Tạo 24 khung hình con trỏ có ngôi sao nhấp nháy quanh (vòng lặp ~2,4 giây)."""
@@ -2130,7 +2528,7 @@ class App:
         if not self.composed:
             return
         im, hot, gcol = self.composed
-        s = self.cfg["size"]
+        s = self.eff_size()
         bb = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox() or (0, 0, im.width, im.height)
         pad = max(8, s // 4)
         W, H = im.width + 2 * pad, im.height + 2 * pad
@@ -2162,7 +2560,9 @@ class App:
                     fr.alpha_composite(st, (px, py))
             frames.append(fr)
         self.cursor_frames = frames
-        self.cf_idx = 0
+        self.cursor_durations = [96] * len(frames)
+        self.cf_idx, self.cf_next = 0, 0.0
+        self.pv_idx, self.pv_next = 0, 0.0
         self.ov_hot = (hot[0] + pad, hot[1] + pad)
         self.ovl.set_image(frames[0])
         if self.active:
@@ -2215,9 +2615,34 @@ class App:
         if self.shell_open:          # menu Start, Search, Alt+Tab... -> dùng con trỏ thật
             return False
         if self.cfg["all_apps"]:
-            return True
-        self.fg_exe = foreground_exe()
-        return bool(self.app_set) and self.fg_exe.lower() in self.app_set
+            want = True
+        else:
+            self.fg_exe = foreground_exe()
+            want = bool(self.app_set) and self.fg_exe.lower() in self.app_set
+        if not want:
+            self.fs_block = False
+            return False
+        now = time.perf_counter()
+        if now - self.fs_checked > 0.5:          # kiểm tra Fullscreen 2 lần/giây là đủ
+            self.fs_checked = now
+            fs = fullscreen_exclusive()
+            if fs != self.fs_block:
+                self.fs_block = fs
+                self.update_status()
+                if fs:
+                    self.warn_fullscreen()
+        return not self.fs_block
+
+    def warn_fullscreen(self):
+        key = self.fg_exe.lower() or "*"
+        if key in self.fs_warned:
+            return
+        self.fs_warned.add(key)
+        try:
+            self.icon.notify(T("Game đang chạy Fullscreen nên EzCursor không vẽ được con trỏ. "
+                               "Hãy chuyển game sang Borderless hoặc Windowed trong phần cài đặt đồ họa."), APP_NAME)
+        except Exception:
+            pass
 
     def set_active(self, on):
         if on == self.active:
@@ -2234,17 +2659,33 @@ class App:
         _name_cache.clear()
         running = list_running_apps()
         running_names = {n.lower() for n, _ in running}
-        items = [(n, t, True) for n, t in running]
-        items += [(n, T("(đang không chạy)"), False) for n in self.cfg["apps"] if n.lower() not in running_names]
-        old = {k: v.get() for k, v in self.app_vars.items()}
+        # (khóa, tiêu đề, dòng phụ, các file chạy, trạng thái)
+        items = [(n, t, n, [n], "run") for n, t in running]
+        preset_of = {exe.lower(): (title, exes) for title, exes in ARPG_GAMES for exe in exes}
+        shown_presets = set()
+        for n in self.cfg["apps"]:
+            if n.lower() in running_names:
+                continue
+            pre = preset_of.get(n.lower())
+            if pre and not any(e.lower() in running_names for e in pre[1]):
+                if pre[0] not in shown_presets:
+                    shown_presets.add(pre[0])
+                    items.append(("preset:" + pre[0], pre[0], ", ".join(pre[1]), pre[1], "off"))
+            else:
+                items.append((n, T("(đang không chạy)"), n, [n], "off"))
+        suggest = [("preset:" + title, title, ", ".join(exes), exes, "hint") for title, exes in ARPG_GAMES
+                   if title not in shown_presets and not any(e.lower() in running_names for e in exes)]
+        old = {k: v[0].get() for k, v in self.app_vars.items()}
         for w in self.app_list.winfo_children():
             w.destroy()
         self.app_vars = {}
-        for name, title, running_now in items:
-            checked = old.get(name, name.lower() in self.app_set)
+        for i, (key, title, sub, exes, state) in enumerate(items + suggest):
+            if i == len(items) and suggest:
+                self.caps(self.app_list, "GỢI Ý: GAME ARPG PHỔ BIẾN").pack(anchor="w", padx=12, pady=(12, 4))
+            checked = old.get(key, any(e.lower() in self.app_set for e in exes))
             var = tk.BooleanVar(value=checked)
-            self.app_vars[name] = var
-            self.add_app_row(name, title, running_now, var)
+            self.app_vars[key] = (var, exes)
+            self.add_app_row(sub, title, state, var)
 
     def add_app_row(self, name, title, running, var):
         row = ctk.CTkFrame(self.app_list, corner_radius=10, border_width=1, height=54)
@@ -2258,12 +2699,15 @@ class App:
         t = title if len(title) <= 50 else title[:47] + "..."
         l1 = ctk.CTkLabel(txt, text=t, font=self.F.b(14, strong=True), text_color=TEXT, height=20, anchor="w")
         l1.pack(anchor="w")
-        l2 = ctk.CTkLabel(txt, text=name, font=self.F.m(12), text_color=MUTED, height=16, anchor="w")
+        sub = name if len(name) <= 70 else name[:67] + "..."
+        l2 = ctk.CTkLabel(txt, text=sub, font=self.F.m(12), text_color=MUTED, height=16, anchor="w")
         l2.pack(anchor="w")
-        badge_col = CYAN_TEXT if running else MUTED
-        badge = ctk.CTkLabel(row, text=T(" ĐANG CHẠY ") if running else T(" KHÔNG CHẠY "), font=self.F.m(10),
-                             text_color=badge_col, corner_radius=11, height=22,
-                             fg_color=mix(CARD, CYAN, 0.1) if running else "#181C26")
+        badge_txt, badge_col, badge_bg = {
+            "run": (T(" ĐANG CHẠY "), CYAN_TEXT, mix(CARD, CYAN, 0.1)),
+            "hint": (T(" GỢI Ý "), GREEN, mix(CARD, GREEN, 0.1)),
+        }.get(running, (T(" KHÔNG CHẠY "), MUTED, "#181C26"))
+        badge = ctk.CTkLabel(row, text=badge_txt, font=self.F.m(10), text_color=badge_col, corner_radius=11,
+                             height=22, fg_color=badge_bg)
         badge.pack(side="right", padx=12)
 
         def style(*_):
@@ -2281,7 +2725,11 @@ class App:
         style()
 
     def apply_apps(self):
-        self.cfg["apps"] = [n for n, v in self.app_vars.items() if v.get()]
+        apps = []
+        for var, exes in self.app_vars.values():
+            if var.get():
+                apps += [e for e in exes if e.lower() not in {a.lower() for a in apps}]
+        self.cfg["apps"] = apps
         self.update_app_set()
         self.update_applied_label(just_applied=True)
         self.refresh()
@@ -2348,6 +2796,27 @@ class App:
         self.cfg["glow"] = bool(self.glow_var.get())
         self.refresh()
 
+    def set_dpi_scale(self):
+        self.cfg["dpi_scale"] = bool(self.dpi_var.get())
+        pt = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        self.cur_scale = monitor_scale(pt.x, pt.y)
+        self.refresh()
+
+    def check_monitor(self):
+        """Đổi kích thước con trỏ khi chuột sang màn hình có tỉ lệ khác (nếu bật)."""
+        if not self.cfg["dpi_scale"]:
+            return
+        pt = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        sc = monitor_scale(pt.x, pt.y)
+        if abs(sc - self.cur_scale) > 0.01:
+            self.cur_scale = sc
+            self.rebuild_overlay()
+            self.update_preview()
+            if self.active:
+                self.move_overlay()
+
     def set_hotspot(self, h):
         self.cfg["hotspot"] = h
         self.refresh()
@@ -2367,7 +2836,8 @@ class App:
     def upload_image(self):
         path = filedialog.askopenfilename(
             parent=self.win, title=T("Chọn ảnh con trỏ"),
-            filetypes=[(T("Ảnh"), "*.png *.gif *.webp *.ico *.bmp *.jpg *.jpeg"), (T("Tất cả"), "*.*")])
+            filetypes=[(T("Ảnh hoặc con trỏ"), "*.png *.gif *.webp *.ico *.cur *.ani *.bmp *.jpg *.jpeg"),
+                       (T("Con trỏ Windows"), "*.cur *.ani"), (T("Tất cả"), "*.*")])
         if not path:
             return
         dest = APP_DIR / ("custom" + Path(path).suffix.lower())
@@ -2376,16 +2846,29 @@ class App:
         except Exception as e:
             messagebox.showerror(T("Lỗi"), T("Không sao chép được ảnh:") + f"\n{e}", parent=self.win)
             return
+        for old in APP_DIR.glob("custom.*"):        # xóa ảnh cũ khác đuôi
+            if old != dest:
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
         if self.load_image(str(dest)):
             self.cfg["image"] = str(dest)
             self.img_label.configure(text=Path(path).name)
+            if self.src_hot is not None:
+                self.cfg["hotspot"] = "Theo file"
+            elif self.cfg["hotspot"] == "Theo file":
+                self.cfg["hotspot"] = HOTSPOTS[0]
+            self.hot_seg.set(T(self.cfg["hotspot"]))
             self.set_shape("Ảnh tải lên")
 
     def load_image(self, path, silent=False):
         try:
-            self.src_img = Image.open(path).convert("RGBA")
+            frames, self.src_hot, steps = load_cursor_file(path)
+            self.src_img = frames[0]
+            self.src_frames, self.src_steps = (frames, steps) if steps and len(frames) > 1 else (None, None)
         except Exception as e:
-            self.src_img = None
+            self.src_img = self.src_frames = self.src_steps = self.src_hot = None
             if not silent:
                 messagebox.showerror(T("Lỗi"), T("Không mở được ảnh:") + f"\n{e}", parent=self.win)
             return False
@@ -2462,8 +2945,7 @@ class App:
                 f.unlink()
             except OSError:
                 pass
-        self.cfg = dict(DEFAULT_CFG)
-        self.cfg["apps"] = []
+        self.cfg = default_cfg()
         self.enabled = True
         self.save()
         if getattr(sys, "frozen", False):
@@ -2728,26 +3210,41 @@ class App:
                     self.pcv.itemconfig(self.coord_txt, text=f"X {pt.x} · Y {pt.y}")
             if self.logo_ctk and f % 2 == 0:
                 self.logo_lbl.configure(image=self.logo_ctk[(f // 2) % len(self.logo_ctk)])
-            if self.tab == "cursor" and self.preview_photos and f % 3 == 0:
-                self.pcv.itemconfig(self.pimg_id, image=self.preview_photos[(f // 3) % len(self.preview_photos)])
+            ms = time.perf_counter() * 1000
+            if self.tab == "cursor" and self.preview_photos and self.cursor_durations and ms >= self.pv_next:
+                self.pv_idx = (self.pv_idx + 1) % len(self.preview_photos)
+                self.pv_next = ms + self.cursor_durations[self.pv_idx % len(self.cursor_durations)]
+                self.pcv.itemconfig(self.pimg_id, image=self.preview_photos[self.pv_idx])
             if f % 24 == 0:
                 self.update_status(blink=(f // 24) % 2 == 1 and self.active)
         self.ov.after(33, self.anim)
 
     def check_hotkeys(self):
+        if self.capturing:
+            return True
         now = set()
-        if key_down(VK_CONTROL) and key_down(VK_MENU):
-            for ch in "12345RHQ":
-                if key_down(ord(ch)):
-                    now.add(ch)
-        for ch in now - self.prev_keys:
-            if ch.isdigit():
-                self.set_color(PRESET_COLORS[int(ch) - 1])
-            elif ch == "R":
+        down = mods_down()
+        if down & {"ctrl", "alt"}:
+            hk = self.cfg["hotkeys"]
+            for act in ("toggle", "shape", "quit"):
+                if set(hk[act]["mods"]) == down and key_down(hk[act]["vk"]):
+                    now.add(act)
+            if set(hk["color"]["mods"]) == down:
+                for i in range(5):
+                    if key_down(0x31 + i):
+                        now.add(f"c{i}")
+        elif self.prev_keys == {"*"}:
+            self.prev_keys = set()
+        if self.prev_keys == {"*"}:
+            return True
+        for act in now - self.prev_keys:
+            if act.startswith("c"):
+                self.set_color(PRESET_COLORS[int(act[1])])
+            elif act == "shape":
                 self.next_shape()
-            elif ch == "H":
+            elif act == "toggle":
                 self.toggle()
-            elif ch == "Q":
+            elif act == "quit":
                 self.quit()
                 return False
         self.prev_keys = now
@@ -2777,6 +3274,7 @@ class App:
             return
         self.tick_count += 1
         if self.tick_count % 25 == 0:
+            self.check_monitor()
             for flag, action in ((SHOW_FLAG, self.show_window), (QUIT_FLAG, self.quit)):
                 if flag.exists():
                     try:

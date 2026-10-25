@@ -14,9 +14,10 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 ## Tính năng
 
 - Đổi màu, hình dạng (mũi tên, vòng tròn, dấu thập, chấm, kim cương) và kích thước con trỏ
-- Dùng ảnh PNG của riêng bạn làm con trỏ, có thể tô màu cho ảnh
+- Dùng ảnh PNG/GIF động hoặc file con trỏ Windows `.cur`, `.ani` làm con trỏ, có thể tô màu cho ảnh
 - Bộ sưu tập con trỏ **Bibata** với các chủ đề Amber, Classic, Ice hoặc màu tùy chỉnh, kiểu Modern / Original, cho cả người thuận tay trái
-- Chỉ hiện trong những game / ứng dụng bạn chọn, ra ngoài thì con trỏ trở lại bình thường
+- Chỉ hiện trong những game / ứng dụng bạn chọn, ra ngoài thì con trỏ trở lại bình thường; có sẵn gợi ý các game ARPG phổ biến
+- Cảnh báo khi game đang chạy Fullscreen độc quyền
 - Chạy ngầm dưới khay hệ thống, có thể khởi động cùng Windows
 - Tự kiểm tra và cập nhật phiên bản mới
 - Giao diện tiếng Việt hoặc tiếng Anh (tab **Tùy chọn → Ngôn ngữ**), đổi ngay không cần khởi động lại
@@ -33,6 +34,8 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 | Ctrl + Alt + R | Đổi hình dạng |
 | Ctrl + Alt + 1..5 | Đổi màu |
 | Ctrl + Alt + Q | Thoát |
+
+Có thể đổi phím tắt trong tab **Tùy chọn** (bấm vào ô phím tắt).
 
 **Nếu con trỏ chuột bị mất:** mở lại EzCursor rồi thoát bằng Ctrl + Alt + Q, hoặc đăng xuất / khởi động lại Windows.
 
@@ -53,7 +56,7 @@ Cần Python 3 (64-bit). Đặt các file (kèm thư mục `fonts`) cùng một 
 - Download the installer from [Releases](https://github.com/ezcursor/EzCursor/releases/latest). If Windows SmartScreen appears, click **More info → Run anyway**.
 - Run your game in **Borderless** or **Windowed** mode.
 - In the **Ứng dụng** (Apps) tab, click **Làm mới danh sách** (Refresh), select your game and click **Áp dụng** (Apply).
-- Hotkeys: Ctrl+Alt+H toggle, Ctrl+Alt+R next shape, Ctrl+Alt+1..5 colors, Ctrl+Alt+Q quit.
+- Hotkeys: Ctrl+Alt+H toggle, Ctrl+Alt+R next shape, Ctrl+Alt+1..5 colors, Ctrl+Alt+Q quit (changeable in the Options tab).
 - EzCursor is an external overlay; it does not modify game files or memory. Use at your own discretion and follow each game's terms of service.
 
 EzCursor is licensed under the [GNU General Public License v3.0](LICENSE).
