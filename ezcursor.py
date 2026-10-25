@@ -11,6 +11,7 @@ Cài đặt lưu tại %APPDATA%\\EzCursor
 """
 
 import atexit
+import collections.abc
 import colorsys
 import ctypes
 import io
@@ -39,7 +40,7 @@ import pystray
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageSequence, ImageTk
 
 APP_NAME = "EzCursor"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
 GITHUB_REPO = "ezcursor/EzCursor"
@@ -269,6 +270,7 @@ DEFAULT_CFG = {
     "skipped_version": "",
     "language": "vi",
     "dpi_scale": False,
+    "profiles": [],      # hồ sơ riêng: [{"name": ..., "exes": [...], "style": {...}}]
     "hotkeys": {
         "toggle": {"mods": ["ctrl", "alt"], "vk": 0x48},   # H
         "shape": {"mods": ["ctrl", "alt"], "vk": 0x52},    # R
@@ -321,12 +323,17 @@ def default_cfg():
     return json.loads(json.dumps(DEFAULT_CFG))     # bản sao sâu
 
 
-def load_cfg():
-    cfg = default_cfg()
-    try:
-        cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
-    except Exception:
-        pass
+# Các cài đặt thuộc về "kiểu con trỏ": mỗi hồ sơ game có một bộ riêng
+STYLE_KEYS = ("color", "shape", "size", "image", "hotspot", "tint_image", "glow", "cursor_sparkle",
+              "fx_trail", "fx_click", "fx_color", "fx_density",
+              "bibata_cursor", "bibata_theme", "bibata_style", "bibata_hand")
+
+
+def clean_style(cfg):
+    """Sửa các giá trị kiểu con trỏ không hợp lệ (dùng cho cấu hình chính lẫn từng hồ sơ)."""
+    for k in STYLE_KEYS:
+        if k not in cfg:
+            cfg[k] = DEFAULT_CFG[k]
     if cfg["shape"] not in SHAPES:
         cfg["shape"] = DEFAULT_CFG["shape"]
     if cfg["hotspot"] not in HOTSPOTS:
@@ -346,16 +353,77 @@ def load_cfg():
         cfg["fx_color"] = "cursor"
     if cfg["fx_density"] not in ("low", "mid", "high"):
         cfg["fx_density"] = "mid"
+    if not isinstance(cfg["color"], str) or len(cfg["color"]) != 7 or not cfg["color"].startswith("#"):
+        cfg["color"] = DEFAULT_CFG["color"]
+    for k in ("tint_image", "glow", "cursor_sparkle"):
+        cfg[k] = bool(cfg[k])
+    if cfg["image"] and not Path(cfg["image"]).exists():
+        alt = APP_DIR / Path(cfg["image"]).name
+        cfg["image"] = str(alt) if alt.exists() else ""
+    return cfg
+
+
+def load_cfg():
+    cfg = default_cfg()
+    try:
+        cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+    except Exception:
+        pass
+    try:
+        clean_style(cfg)
+    except Exception:
+        for k in STYLE_KEYS:
+            cfg[k] = DEFAULT_CFG[k]
+    profiles = []
+    for pr in cfg.get("profiles") if isinstance(cfg.get("profiles"), list) else []:
+        try:
+            exes = [e for e in pr["exes"] if isinstance(e, str) and e]
+            if not exes or not isinstance(pr.get("name"), str):
+                continue
+            st = {k: cfg[k] for k in STYLE_KEYS}
+            st.update({k: v for k, v in pr.get("style", {}).items() if k in STYLE_KEYS})
+            profiles.append({"name": pr["name"], "exes": exes, "style": clean_style(st)})
+        except Exception:
+            continue
+    cfg["profiles"] = profiles
     cfg["dpi_scale"] = bool(cfg.get("dpi_scale"))
     cfg["hotkeys"] = clean_hotkeys(cfg.get("hotkeys"))
     if cfg["language"] not in dict(LANGUAGES):
         cfg["language"] = "vi"
     if not isinstance(cfg["apps"], list):
         cfg["apps"] = list(DEFAULT_CFG["apps"])
-    if cfg["image"] and not Path(cfg["image"]).exists():
-        alt = APP_DIR / Path(cfg["image"]).name
-        cfg["image"] = str(alt) if alt.exists() else ""
     return cfg
+
+
+class ProfileCfg(collections.abc.MutableMapping):
+    """Cấu hình dùng trong app: các khóa kiểu con trỏ đọc/ghi vào hồ sơ đang chọn (target),
+    các khóa còn lại đọc/ghi vào cấu hình chính (base). Hồ sơ Mặc định chính là base."""
+
+    def __init__(self, base):
+        self.base = base
+        self.target = base
+
+    def __getitem__(self, k):
+        if k in STYLE_KEYS and self.target is not self.base:
+            return self.target.get(k, self.base[k])
+        return self.base[k]
+
+    def __setitem__(self, k, v):
+        (self.target if k in STYLE_KEYS else self.base)[k] = v
+
+    def __delitem__(self, k):
+        del self.base[k]
+
+    def __iter__(self):
+        return iter(self.base)
+
+    def __len__(self):
+        return len(self.base)
+
+
+def slug(text):
+    keep = "".join(ch.lower() if ch.isalnum() else "-" for ch in text)
+    return "-".join(x for x in keep.split("-") if x)[:40] or "game"
 
 
 # ---------------------------------------------------------------- Ngôn ngữ giao diện
@@ -472,6 +540,11 @@ TR_EN = {
     "Bấm Esc để hủy.": "Press Esc to cancel.", "Cần giữ Ctrl hoặc Alt.": "Hold Ctrl or Alt.",
     "Đổi màu dùng các phím số 1–5.": "Color changes use number keys 1–5.",
     "Trùng với phím của: ": "Already used by: ",
+    # 1.6.0
+    "Đang chỉnh": "Editing", "Mặc định (mọi game)": "Default (all games)",
+    "+ Hồ sơ riêng": "+ Own profile", "✓ Hồ sơ riêng": "✓ Own profile", "Hồ sơ: ": "Profile: ",
+    "Xóa hồ sơ riêng \"{n}\"? Game này sẽ dùng lại kiểu Mặc định.":
+        "Delete the profile \"{n}\"? This game will go back to the Default style.",
 }
 
 
@@ -872,6 +945,12 @@ def simple_icon(kind, color, size=16):
     def draw(d, s):
         s = s * size / 16          # icon thiết kế trên lưới 16 đơn vị
         w = int(2 * s)
+        if kind == "trash":
+            w = max(1, int(1.6 * s))
+            d.line([(3 * s, 4.5 * s), (13 * s, 4.5 * s)], fill=color, width=w)
+            d.line([(6.5 * s, 4.5 * s), (6.5 * s, 2.5 * s), (9.5 * s, 2.5 * s), (9.5 * s, 4.5 * s)], fill=color, width=w)
+            d.polygon([(4.5 * s, 6 * s), (11.5 * s, 6 * s), (10.8 * s, 14 * s), (5.2 * s, 14 * s)], outline=color, width=w)
+            return
         if kind == "upload":
             d.line([(8 * s, 11 * s), (8 * s, 2.5 * s)], fill=color, width=w)
             d.line([(4.5 * s, 6 * s), (8 * s, 2.5 * s), (11.5 * s, 6 * s)], fill=color, width=w, joint="curve")
@@ -1496,7 +1575,11 @@ class App:
     PW, PH = 316, 300   # kích thước khung xem trước
 
     def __init__(self, start_in_tray):
-        self.cfg = load_cfg()
+        self.cfg = ProfileCfg(load_cfg())
+        self.edit_profile = None        # hồ sơ đang chỉnh trong giao diện (None = Mặc định)
+        self.play_profile = None        # hồ sơ của game đang chơi
+        self.img_cache = {}
+        self.profile_menus = []
         global LANG
         LANG = self.cfg["language"]
         self.enabled = bool(self.cfg["enabled"])
@@ -1624,6 +1707,159 @@ class App:
         ctk.CTkLabel(f, text=T(sub), font=self.F.b(13), text_color=TEXT2).pack(anchor="w")
         return f
 
+    def page_top(self, page, title, sub, pady):
+        """Tiêu đề tab kèm ô chọn hồ sơ đang chỉnh."""
+        top = ctk.CTkFrame(page, fg_color="transparent")
+        top.pack(fill="x", pady=pady)
+        self.header(top, title, sub).pack(side="left", anchor="w")
+        box = ctk.CTkFrame(top, fg_color="transparent")
+        box.pack(side="right", anchor="s")
+        ctk.CTkLabel(box, text=T("Đang chỉnh"), font=self.F.b(11), text_color=MUTED, height=14).pack(anchor="w")
+        row = ctk.CTkFrame(box, fg_color="transparent")
+        row.pack(anchor="w")
+        menu = ctk.CTkOptionMenu(row, values=[""], command=self.pick_profile, width=210, height=32,
+                                 corner_radius=8, fg_color=FIELD, button_color=mix(CARD, ACCENT, 0.35),
+                                 button_hover_color=mix(CARD, ACCENT, 0.5), text_color=TEXT,
+                                 dropdown_fg_color=CARD, dropdown_hover_color=mix(CARD, ACCENT, 0.2),
+                                 dropdown_text_color=TEXT, font=self.F.b(12, strong=True),
+                                 dropdown_font=self.F.b(12), dynamic_resizing=False)
+        menu.pack(side="left")
+        rm = ctk.CTkButton(row, text="", width=32, height=32, corner_radius=8, fg_color="transparent",
+                           hover_color=mix(CARD, "#FF5A5A", 0.22), border_width=1, border_color=BORDER,
+                           image=ctk.CTkImage(simple_icon("trash", "#FF8A8A", 32), size=(14, 14)),
+                           command=self.delete_profile)
+        self.profile_menus.append((menu, rm))
+        return top
+
+    # ------------------------------------------------------------ Hồ sơ riêng từng game
+    def profile_label(self, pr):
+        return T("Mặc định (mọi game)") if pr is None else pr["name"]
+
+    def update_profile_menus(self):
+        values = [self.profile_label(None)] + [pr["name"] for pr in self.cfg["profiles"]]
+        cur = self.profile_label(self.edit_profile)
+        for menu, rm in self.profile_menus:
+            try:
+                menu.configure(values=values)
+                menu.set(cur)
+                if self.edit_profile is None:
+                    rm.pack_forget()
+                elif not rm.winfo_ismapped():
+                    rm.pack(side="left", padx=(6, 0))
+            except tk.TclError:
+                pass
+
+    def profile_for_exe(self, exe):
+        exe = (exe or "").lower()
+        for pr in self.cfg["profiles"]:
+            if exe in (e.lower() for e in pr["exes"]):
+                return pr
+        return None
+
+    def style_of(self, pr):
+        return self.cfg.base if pr is None else pr["style"]
+
+    def pick_profile(self, label):
+        pr = next((p for p in self.cfg["profiles"] if p["name"] == label), None)
+        self.edit_profile = pr
+        self.update_profile_menus()
+        if not self.active:
+            self.use_style(self.style_of(pr))
+
+    def use_style(self, style, force=False):
+        """Chuyển cài đặt kiểu con trỏ sang bộ khác và vẽ lại."""
+        if style is self.cfg.target and not force:
+            return
+        self.cfg.target = style
+        self.load_image(self.cfg["image"], silent=True) if self.cfg["image"] else self.clear_image()
+        self.sync_style_widgets()
+        self.refresh()
+
+    def sync_style_widgets(self):
+        """Cập nhật các ô điều khiển giữ trạng thái riêng theo bộ kiểu đang chọn."""
+        c = self.cfg
+        try:
+            self.size_slider.set(c["size"])
+            self.tint_var.set(c["tint_image"])
+            self.glow_var.set(c["glow"])
+            self.hot_seg.set(T(c["hotspot"]))
+            self.img_label.configure(text=Path(c["image"]).name if c["image"] and self.src_img is not None
+                                     else T("(chưa có ảnh)"))
+            if getattr(self, "style_seg", None):
+                self.style_seg.set({v: k for k, v in self.style_map.items()}.get(c["bibata_style"]))
+                self.hand_seg.set({v: k for k, v in self.hand_map.items()}.get(c["bibata_hand"]))
+            self.fx_color_seg.set({v: k for k, v in self.fx_color_map.items()}.get(c["fx_color"]))
+            self.fx_dens_seg.set({v: k for k, v in self.fx_dens_map.items()}.get(c["fx_density"]))
+        except (tk.TclError, AttributeError):
+            pass
+
+    def create_profile(self, title, exes):
+        """Tạo hồ sơ riêng (sao chép kiểu Mặc định) cho game, rồi mở tab Con trỏ để chỉnh."""
+        names = {pr["name"] for pr in self.cfg["profiles"]}
+        name, i = title, 2
+        while name in names or name == self.profile_label(None):
+            name, i = f"{title} {i}", i + 1
+        st = {k: self.cfg.base[k] for k in STYLE_KEYS}
+        st = json.loads(json.dumps(st))
+        if st["image"]:      # mỗi hồ sơ giữ bản sao ảnh riêng
+            src = Path(st["image"])
+            dest = APP_DIR / f"custom-{slug(name)}{src.suffix.lower()}"
+            try:
+                shutil.copyfile(src, dest)
+                st["image"] = str(dest)
+            except OSError:
+                st["image"] = ""
+        pr = {"name": name, "exes": list(exes), "style": st}
+        self.cfg["profiles"].append(pr)
+        added = [e for e in exes if e.lower() not in self.app_set]
+        if added:                # game có hồ sơ riêng thì chắc chắn được áp dụng
+            self.cfg["apps"] = self.cfg["apps"] + added
+            self.update_app_set()
+            self.update_applied_label()
+        self.edit_profile = pr
+        self.update_profile_menus()
+        self.use_style(pr["style"])
+        self.show_tab("cursor")
+        self.save()
+
+    def open_profile(self, exes, title):
+        pr = next((self.profile_for_exe(e) for e in exes if self.profile_for_exe(e)), None)
+        if pr is None:
+            self.create_profile(title, exes)
+            return
+        self.edit_profile = pr
+        self.update_profile_menus()
+        self.use_style(pr["style"])
+        self.show_tab("cursor")
+
+    def delete_profile(self):
+        pr = self.edit_profile
+        if pr is None:
+            return
+        if not messagebox.askyesno(APP_NAME, T("Xóa hồ sơ riêng \"{n}\"? Game này sẽ dùng lại kiểu Mặc định.")
+                                   .format(n=pr["name"]), parent=self.win):
+            return
+        img = pr["style"].get("image")
+        if img and Path(img).name.startswith("custom-"):
+            try:
+                Path(img).unlink()
+            except OSError:
+                pass
+        self.cfg["profiles"].remove(pr)
+        self.edit_profile = None
+        self.play_profile = None
+        self.update_profile_menus()
+        self.use_style(self.cfg.base, force=True)
+        if self.tab == "apps":
+            self.refresh_apps()
+
+    def pick_target(self):
+        """Hồ sơ cần dùng lúc này: của game đang chơi nếu đang hoạt động, nếu không thì hồ sơ đang chỉnh."""
+        if self.active:
+            self.play_profile = self.profile_for_exe(self.fg_exe)
+            return self.style_of(self.play_profile)
+        return self.style_of(self.edit_profile)
+
     # ------------------------------------------------------------ Dựng giao diện
     def build_ui(self):
         self.win.grid_columnconfigure(1, weight=1)
@@ -1640,6 +1876,7 @@ class App:
             "apps": self.build_apps_tab(self.content),
             "opts": self.build_options_tab(self.content),
         }
+        self.update_profile_menus()
         self.show_tab("cursor")
 
     def build_sidebar(self):
@@ -1693,7 +1930,7 @@ class App:
 
     def build_cursor_tab(self, parent):
         page = ctk.CTkFrame(parent, fg_color="transparent")
-        self.header(page, "CON TRỎ", "Chọn hình dạng, màu sắc và kích thước con trỏ trong game.").pack(anchor="w", pady=(0, 16))
+        self.page_top(page, "CON TRỎ", "Chọn hình dạng, màu sắc và kích thước con trỏ trong game.", (0, 16))
         body = ctk.CTkFrame(page, fg_color="transparent")
         body.pack(fill="both", expand=True)
         body.grid_columnconfigure((0, 1), weight=1, uniform="c")
@@ -1820,8 +2057,7 @@ class App:
     # ------------------------------------------------------------ Tab Bộ sưu tập (Bibata)
     def build_library_tab(self, parent):
         page = ctk.CTkFrame(parent, fg_color="transparent")
-        self.header(page, "BỘ SƯU TẬP", "Con trỏ của EzCursor và bộ Bibata. Bấm vào con trỏ muốn dùng.").pack(
-            anchor="w", pady=(0, 14))
+        self.page_top(page, "BỘ SƯU TẬP", "Con trỏ của EzCursor và bộ Bibata. Bấm vào con trỏ muốn dùng.", (0, 14))
         self.bib_tiles = {}
         if not BIBATA_DIR.exists():
             ctk.CTkLabel(page, text=T("Không tìm thấy thư mục bibata đi kèm phần mềm."), font=self.F.b(13),
@@ -1997,8 +2233,7 @@ class App:
     # ------------------------------------------------------------ Tab Hiệu ứng
     def build_fx_tab(self, parent):
         page = ctk.CTkFrame(parent, fg_color="transparent")
-        self.header(page, "HIỆU ỨNG", "Thêm vệt sáng theo con trỏ và hiệu ứng khi click trong game.").pack(
-            anchor="w", pady=(0, 14))
+        self.page_top(page, "HIỆU ỨNG", "Thêm vệt sáng theo con trỏ và hiệu ứng khi click trong game.", (0, 14))
         self.fx_tiles = {}
 
         def tile_group(title, options, key):
@@ -2409,7 +2644,7 @@ class App:
     def save(self):
         self.cfg["enabled"] = self.enabled
         try:
-            CONFIG_PATH.write_text(json.dumps(self.cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+            CONFIG_PATH.write_text(json.dumps(self.cfg.base, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             pass
 
@@ -2418,6 +2653,9 @@ class App:
             return T("●  ĐANG TẮT"), MUTED, T("Con trỏ gốc đang được dùng.")
         if self.active:
             sub = T("Áp dụng cho mọi ứng dụng.") if self.cfg["all_apps"] else T("Trong game: ") + self.fg_exe
+            pr = self.profile_for_exe(self.fg_exe)
+            if pr:
+                sub += "\n" + T("Hồ sơ: ") + pr["name"]
             return T("●  ĐANG HOẠT ĐỘNG"), GREEN, sub
         if self.shell_open:
             return T("●  TẠM DỪNG"), AMBER, T("Đang ở trên giao diện của Windows.")
@@ -2614,10 +2852,10 @@ class App:
         self.shell_open = shell_ui_open()
         if self.shell_open:          # menu Start, Search, Alt+Tab... -> dùng con trỏ thật
             return False
+        self.fg_exe = foreground_exe()
         if self.cfg["all_apps"]:
             want = True
         else:
-            self.fg_exe = foreground_exe()
             want = bool(self.app_set) and self.fg_exe.lower() in self.app_set
         if not want:
             self.fs_block = False
@@ -2685,9 +2923,10 @@ class App:
             checked = old.get(key, any(e.lower() in self.app_set for e in exes))
             var = tk.BooleanVar(value=checked)
             self.app_vars[key] = (var, exes)
-            self.add_app_row(sub, title, state, var)
+            pname = title if key.startswith("preset:") else Path(exes[0]).stem
+            self.add_app_row(sub, title, state, var, exes, pname)
 
-    def add_app_row(self, name, title, running, var):
+    def add_app_row(self, name, title, running, var, exes=(), pname=""):
         row = ctk.CTkFrame(self.app_list, corner_radius=10, border_width=1, height=54)
         row.pack(fill="x", padx=6, pady=3)
         cb = ctk.CTkCheckBox(row, text="", variable=var, width=24, checkbox_width=20, checkbox_height=20,
@@ -2708,7 +2947,16 @@ class App:
         }.get(running, (T(" KHÔNG CHẠY "), MUTED, "#181C26"))
         badge = ctk.CTkLabel(row, text=badge_txt, font=self.F.m(10), text_color=badge_col, corner_radius=11,
                              height=22, fg_color=badge_bg)
-        badge.pack(side="right", padx=12)
+        badge.pack(side="right", padx=12, before=txt)
+        has = any(self.profile_for_exe(e) for e in exes)
+        prof = ctk.CTkButton(row, text=T("✓ Hồ sơ riêng") if has else T("+ Hồ sơ riêng"), width=10, height=26,
+                             corner_radius=8, font=self.F.b(12, strong=has), border_width=1,
+                             border_color=ACCENT if has else BORDER,
+                             fg_color=mix(CARD, ACCENT, 0.18) if has else "transparent",
+                             hover_color=mix(CARD, ACCENT, 0.28), text_color="#FFFFFF" if has else TEXT2,
+                             command=lambda: self.open_profile(list(exes), pname or title))
+        if exes:
+            prof.pack(side="right", before=txt)
 
         def style(*_):
             on = var.get()
@@ -2840,13 +3088,14 @@ class App:
                        (T("Con trỏ Windows"), "*.cur *.ani"), (T("Tất cả"), "*.*")])
         if not path:
             return
-        dest = APP_DIR / ("custom" + Path(path).suffix.lower())
+        stem = "custom" if self.cfg.target is self.cfg.base else "custom-" + slug(self.profile_name_of_target())
+        dest = APP_DIR / (stem + Path(path).suffix.lower())
         try:
             shutil.copyfile(path, dest)
         except Exception as e:
             messagebox.showerror(T("Lỗi"), T("Không sao chép được ảnh:") + f"\n{e}", parent=self.win)
             return
-        for old in APP_DIR.glob("custom.*"):        # xóa ảnh cũ khác đuôi
+        for old in APP_DIR.glob(stem + ".*"):        # xóa ảnh cũ khác đuôi
             if old != dest:
                 try:
                     old.unlink()
@@ -2862,9 +3111,23 @@ class App:
             self.hot_seg.set(T(self.cfg["hotspot"]))
             self.set_shape("Ảnh tải lên")
 
+    def profile_name_of_target(self):
+        for pr in self.cfg["profiles"]:
+            if pr["style"] is self.cfg.target:
+                return pr["name"]
+        return "game"
+
+    def clear_image(self):
+        self.src_img = self.src_frames = self.src_steps = self.src_hot = None
+
     def load_image(self, path, silent=False):
         try:
-            frames, self.src_hot, steps = load_cursor_file(path)
+            key = (path, os.path.getmtime(path))
+            if key not in self.img_cache:
+                if len(self.img_cache) > 8:
+                    self.img_cache.clear()
+                self.img_cache[key] = load_cursor_file(path)
+            frames, self.src_hot, steps = self.img_cache[key]
             self.src_img = frames[0]
             self.src_frames, self.src_steps = (frames, steps) if steps and len(frames) > 1 else (None, None)
         except Exception as e:
@@ -2940,12 +3203,12 @@ class App:
                                      "Danh sách game, con trỏ, hiệu ứng và ảnh đã tải lên sẽ bị xóa. "
                                      "EzCursor sẽ tự khởi động lại."), parent=self.win):
             return
-        for f in APP_DIR.glob("custom.*"):
+        for f in APP_DIR.glob("custom*.*"):
             try:
                 f.unlink()
             except OSError:
                 pass
-        self.cfg = default_cfg()
+        self.cfg = ProfileCfg(default_cfg())
         self.enabled = True
         self.save()
         if getattr(sys, "frozen", False):
@@ -2972,6 +3235,7 @@ class App:
         tab = self.tab
         for w in self.win.winfo_children():
             w.destroy()
+        self.profile_menus = []
         self.build_ui()
         self.refresh_apps()
         self.refresh()
@@ -3285,7 +3549,13 @@ class App:
                     if flag is QUIT_FLAG:
                         return
         was_shell = self.shell_open
-        self.set_active(self.compute_active())
+        want = self.compute_active()
+        if want:      # đổi sang hồ sơ của game trước khi hiện con trỏ
+            pr = self.profile_for_exe(self.fg_exe)
+            self.use_style(self.style_of(pr))
+        self.set_active(want)
+        if not self.active:
+            self.use_style(self.style_of(self.edit_profile))
         if was_shell != self.shell_open:
             self.update_status()
         if self.active:

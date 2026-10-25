@@ -18,6 +18,7 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 - Bộ sưu tập con trỏ **Bibata** với các chủ đề Amber, Classic, Ice hoặc màu tùy chỉnh, kiểu Modern / Original, cho cả người thuận tay trái
 - Chỉ hiện trong những game / ứng dụng bạn chọn, ra ngoài thì con trỏ trở lại bình thường; có sẵn gợi ý các game ARPG phổ biến
 - Cảnh báo khi game đang chạy Fullscreen độc quyền
+- Hồ sơ riêng cho từng game: mỗi game một con trỏ và hiệu ứng riêng, tự đổi khi chuyển game
 - Chạy ngầm dưới khay hệ thống, có thể khởi động cùng Windows
 - Tự kiểm tra và cập nhật phiên bản mới
 - Giao diện tiếng Việt hoặc tiếng Anh (tab **Tùy chọn → Ngôn ngữ**), đổi ngay không cần khởi động lại
@@ -56,6 +57,7 @@ Cần Python 3 (64-bit). Đặt các file (kèm thư mục `fonts`) cùng một 
 - Download the installer from [Releases](https://github.com/ezcursor/EzCursor/releases/latest). If Windows SmartScreen appears, click **More info → Run anyway**.
 - Run your game in **Borderless** or **Windowed** mode.
 - In the **Ứng dụng** (Apps) tab, click **Làm mới danh sách** (Refresh), select your game and click **Áp dụng** (Apply).
+- Per-game profiles: give each game its own cursor and effects (Apps tab → "+ Own profile").
 - Hotkeys: Ctrl+Alt+H toggle, Ctrl+Alt+R next shape, Ctrl+Alt+1..5 colors, Ctrl+Alt+Q quit (changeable in the Options tab).
 - EzCursor is an external overlay; it does not modify game files or memory. Use at your own discretion and follow each game's terms of service.
 

@@ -1,13 +1,11 @@
-✦ Mới trong 1.5.0
-- Gợi ý sẵn các game ARPG phổ biến trong tab Ứng dụng (Last Epoch, Path of Exile 1/2, Diablo II/III/IV, Grim Dawn, Torchlight II, Titan Quest, Lost Ark)
-- Cảnh báo khi game chạy Fullscreen độc quyền: EzCursor trả lại con trỏ thật và nhắc chuyển sang Borderless/Windowed
-- Tự đặt phím tắt: bấm vào ô phím tắt trong tab Tùy chọn để đổi
-- Dùng được file con trỏ Windows .cur, .ani (con trỏ động) và ảnh GIF động, giữ đúng điểm click của file
-- Tùy chọn phóng con trỏ theo tỉ lệ màn hình (hữu ích khi dùng nhiều màn hình)
+✦ Mới trong 1.6.0: Hồ sơ riêng cho từng game
+- Mỗi game có thể có con trỏ, màu, kích thước, ảnh và hiệu ứng riêng; EzCursor tự đổi khi bạn chuyển game
+- Tạo hồ sơ: tab Ứng dụng → bấm "+ Hồ sơ riêng" ở dòng của game
+- Chọn hồ sơ cần chỉnh bằng ô "Đang chỉnh" ở đầu các tab Con trỏ, Bộ sưu tập, Hiệu ứng
+- Game chưa có hồ sơ riêng dùng kiểu Mặc định như trước; phím tắt đổi hình/đổi màu áp dụng cho hồ sơ của game đang chơi
 
-✦ New in 1.5.0
-- Suggested popular ARPGs in the Apps tab
-- Fullscreen warning: EzCursor restores the real cursor and asks you to switch to Borderless/Windowed
-- Custom hotkeys: click a hotkey box in the Options tab to change it
-- Windows cursor files .cur and .ani (animated) and animated GIFs, keeping the file's click point
-- Option to scale the cursor with display scaling (handy for multi-monitor setups)
+✦ New in 1.6.0: Per-game profiles
+- Each game can have its own cursor, color, size, image and effects; EzCursor switches automatically
+- Create one in the Apps tab with "+ Own profile" on the game's row
+- Pick the profile to edit with the "Editing" box at the top of the Cursor, Library and Effects tabs
+- Games without a profile keep using the Default style; shape/color hotkeys change the profile of the game you're playing
