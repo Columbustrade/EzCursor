@@ -9,10 +9,10 @@ from tkinter import colorchooser, filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
-from ..base import APP_NAME, APP_VERSION, MY_DIR
+from ..base import APP_NAME, APP_VERSION, MY_DIR, log
 from ..i18n import T
 from ..hotkeys import hotkey_parts
-from ..config import HOTSPOTS, SHAPES, TRANSPARENT, unique_my_path
+from ..config import DEFAULT_CFG, HOTSPOTS, SHAPES, TRANSPARENT, unique_my_path
 from ..colors import mix
 from ..curfile import load_cursor_file
 from ..theme import (
@@ -408,6 +408,7 @@ class CursorTabMixin:
             pass
         self.cfg["favorites"] = [f for f in self.cfg["favorites"] if f != "my:" + Path(img).name]
         self.cfg["made_cursors"] = {k: v for k, v in self.cfg["made_cursors"].items() if k != Path(img).name}
+        self.cfg["catalog_got"] = {k: v for k, v in self.cfg["catalog_got"].items() if v != Path(img).name}
         for st in [self.cfg.base] + [pr["style"] for pr in self.cfg["profiles"]]:
             if st.get("image") == img:
                 st["image"] = ""
@@ -421,6 +422,18 @@ class CursorTabMixin:
 
     def clear_image(self):
         self.src_img = self.src_frames = self.src_steps = self.src_hot = None
+
+    def load_style_image(self):
+        """Nạp ảnh của bộ kiểu đang chọn; file mất hoặc hỏng thì quay về con trỏ mặc định thay vì báo lỗi."""
+        img = self.cfg["image"]
+        if img and self.load_image(img, silent=True):
+            return
+        self.clear_image()
+        if img:
+            log.warning("Không mở được ảnh con trỏ %s, dùng con trỏ mặc định", img)
+            self.cfg["image"] = ""
+        if self.cfg["shape"] == "Ảnh tải lên":
+            self.cfg["shape"] = DEFAULT_CFG["shape"]
 
     def load_image(self, path, silent=False):
         try:

@@ -3,13 +3,26 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import time
+from pathlib import Path
 
 import pytest
 
+import stubs
 from harness import ez
 
 AD = os.path.join(os.environ["APPDATA"], "EzCursor")
+
+
+def check_test_dir():
+    """Dừng ngay nếu AD không nằm trong thư mục tạm của kiểm thử (tránh xoá %APPDATA%\\EzCursor thật)."""
+    ad = Path(AD).resolve()
+    tmp = Path(tempfile.gettempdir()).resolve()
+    own = Path(stubs.APPDATA).resolve()
+    assert ad.is_relative_to(own) and own.is_relative_to(tmp) and own != tmp, \
+        f"Từ chối xoá {ad}: không nằm trong thư mục tạm kiểm thử {own}"
+    assert Path(ez.APP_DIR).resolve() == ad, f"App dùng {ez.APP_DIR}, kiểm thử dùng {ad}"
 
 
 class FakeOverlay:
@@ -44,6 +57,7 @@ def log_errors():
 
 @pytest.fixture
 def app():
+    check_test_dir()
     shutil.rmtree(AD, ignore_errors=True)
     os.makedirs(AD)
     json.dump({"splash": False, "setup_done": True, "all_apps": True, "shape": "EzDrop", "ombre": True, "ombre_anim": True,
@@ -74,6 +88,9 @@ def app():
     a.state = state
     yield a
     a.quit()
+    for h in list(ez.log.handlers):     # Windows khoá file đang mở: đóng ezcursor.log để test sau xoá được AD
+        ez.log.removeHandler(h)
+        h.close()
 
 
 def pump(app, n=15):

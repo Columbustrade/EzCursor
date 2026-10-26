@@ -161,8 +161,7 @@ class App(
         except Exception:
             self.sc = 1.0
 
-        if self.cfg["image"]:
-            self.load_image(self.cfg["image"], silent=True)
+        self.load_style_image()
 
         self.build_ui()
         self.splashing = False

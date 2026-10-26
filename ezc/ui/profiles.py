@@ -51,7 +51,7 @@ class ProfilesMixin:
         if style is self.cfg.target and not force:
             return
         self.cfg.target = style
-        self.load_image(self.cfg["image"], silent=True) if self.cfg["image"] else self.clear_image()
+        self.load_style_image()
         try:
             hidden = not self.win.winfo_viewable()
         except tk.TclError:

@@ -27,7 +27,11 @@ class CatalogMixin:
         if not name:
             return None
         f = MY_DIR / name
-        return f if f.is_file() else None
+        if f.is_file():
+            return f
+        # file đã bị xoá: bỏ khỏi danh sách đã tải để lần sau bấm là tải lại
+        self.cfg["catalog_got"] = {k: v for k, v in self.cfg["catalog_got"].items() if k != cid}
+        return None
 
     def cat_thumb_path(self, e):
         return CAT_DIR / f"{e['id']}-{e['sha256'][:8]}.png"

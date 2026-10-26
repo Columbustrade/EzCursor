@@ -170,6 +170,8 @@ def clean_style(cfg):
         name = Path(cfg["image"]).name
         alt = next((d / name for d in (MY_DIR, APP_DIR) if (d / name).exists()), None)
         cfg["image"] = str(alt) if alt else ""
+    if cfg["shape"] == "Ảnh tải lên" and not cfg["image"]:     # file ảnh đã mất: quay về con trỏ mặc định
+        cfg["shape"] = DEFAULT_CFG["shape"]
     return cfg
 
 
@@ -293,7 +295,9 @@ def load_cfg():
     made = cfg.get("made_cursors") if isinstance(cfg.get("made_cursors"), dict) else {}
     cfg["made_cursors"] = {k: v for k, v in made.items() if isinstance(k, str) and isinstance(v, dict)}
     got = cfg.get("catalog_got") if isinstance(cfg.get("catalog_got"), dict) else {}
-    cfg["catalog_got"] = {k: v for k, v in got.items() if isinstance(k, str) and isinstance(v, str)}
+    # file đã bị xoá khỏi my_cursors thì coi như chưa tải, để kho trực tuyến cho tải lại
+    cfg["catalog_got"] = {k: v for k, v in got.items() if isinstance(k, str) and isinstance(v, str)
+                          and v and Path(v).name == v and (MY_DIR / v).is_file()}
     favs = cfg.get("favorites") if isinstance(cfg.get("favorites"), list) else []
     cfg["favorites"] = list(dict.fromkeys(f for f in favs if isinstance(f, str) and f))[:60]
     migrate_my_cursors(cfg)
