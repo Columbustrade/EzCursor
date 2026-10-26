@@ -60,6 +60,17 @@ EzCursor là một lớp phủ (overlay) chạy bên ngoài game: nó chỉ đ�
 
 Cần Python 3 (64-bit). Đặt các file (kèm thư mục `fonts`) cùng một thư mục rồi chạy `build_installer.bat`. File này sẽ cài thư viện, đóng gói `EzCursor.exe` bằng PyInstaller và tạo bộ cài bằng Inno Setup 6. Bộ cài nằm trong thư mục `installer`.
 
+### Cấu trúc mã nguồn
+
+- `ezcursor.py`: điểm khởi chạy (chạy `python ezcursor.py` để mở app từ mã nguồn).
+- `ezc/`: phần lõi, mỗi file một việc: `config.py` (cài đặt), `overlay.py` (lớp phủ vẽ con trỏ), `fx.py` (hiệu ứng), `ombre.py`, `maker.py` (trình tạo con trỏ), `curfile.py` (đọc .cur / .ani), `i18n.py` (ngôn ngữ), `syscursor.py` (chế độ Con trỏ thật, đang ẩn)...
+- `ezc/ui/`: giao diện, mỗi file một phần của cửa sổ (tab Con trỏ, Bộ sưu tập, Hiệu ứng, Tùy chọn, menu khay, vòng lặp bám chuột...). Lớp `App` trong `ezc/app.py` ghép các phần này lại.
+- Số phiên bản nằm trong `ezc/base.py` và `EzCursor.iss`.
+
+### Kiểm thử
+
+Thư mục `tests` chạy được trên Linux với màn hình ảo (phần riêng của Windows được giả lập): `xvfb-run -a python -m pytest tests`. GitHub tự chạy bộ kiểm thử này mỗi lần bạn Push (tab **Actions** của repo).
+
 ---
 
 ## English

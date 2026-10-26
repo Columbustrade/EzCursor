@@ -91,7 +91,7 @@ gh release view v%VER% --repo %REPO% >nul 2>nul
 if not errorlevel 1 (
     echo.
     echo *** Ban phat hanh v%VER% da co tren GitHub. ***
-    echo Hay tang so phien ban trong ezcursor.py va EzCursor.iss, build lai roi phat hanh.
+    echo Hay tang so phien ban trong ezc\base.py va EzCursor.iss, build lai roi phat hanh.
     exit /b 0
 )
 if exist release_notes.txt goto conotes
