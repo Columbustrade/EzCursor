@@ -255,7 +255,17 @@ def restore_system_cursors(force=False):
         pass
 
 
+try:          # đồng hồ hẹn giờ của Windows chính xác tới 1 ms (mặc định ~15,6 ms làm vòng lặp chạy chậm)
+    ctypes.windll.winmm.timeBeginPeriod(1)
+except Exception:
+    pass
+
+
 def cleanup():
+    try:
+        ctypes.windll.winmm.timeEndPeriod(1)
+    except Exception:
+        pass
     try:
         restore_system_cursors()
     except Exception:
@@ -485,6 +495,8 @@ DEFAULT_CFG = {
     "made_cursors": {},       # con trỏ tự tạo: {tên file trong my_cursors: thông số} để mở lại sửa
     "sys_skip": [],            # game tự đặt con trỏ riêng -> dùng Lớp phủ dù đang ở chế độ Con trỏ thật
     "cursor_mode": "overlay",  # "overlay" (lớp phủ, nhiều hiệu ứng) / "system" (con trỏ thật, không độ trễ)
+    "predict": True,           # đoán trước vị trí con trỏ theo tốc độ chuột (bù ~nửa khung hình)
+    "keep_taskbar": True,      # rê chuột xuống taskbar vẫn dùng con trỏ EzCursor
     "setup_done": False,      # đã qua màn hình thiết lập lần đầu
     "favorites": [],          # con trỏ yêu thích: mã hình, "bib:<tên>" hoặc "my:<tên file>"
     "profiles": [],      # hồ sơ riêng: [{"name": ..., "exes": [...], "style": {...}}]
@@ -705,6 +717,8 @@ def load_cfg():
     cfg["find_shake"] = bool(cfg.get("find_shake", True))
     sk = cfg.get("sys_skip") if isinstance(cfg.get("sys_skip"), list) else []
     cfg["sys_skip"] = [x for x in sk if isinstance(x, str)][:50]
+    cfg["keep_taskbar"] = bool(cfg.get("keep_taskbar", True))
+    cfg["predict"] = bool(cfg.get("predict", True))
     if cfg.get("cursor_mode") not in ("overlay", "system"):
         cfg["cursor_mode"] = "overlay"
     made = cfg.get("made_cursors") if isinstance(cfg.get("made_cursors"), dict) else {}
@@ -925,6 +939,11 @@ TR_EN = {
         "{g} uses its own cursor, so Real cursor mode can't replace it. EzCursor switched to Overlay for this game.",
     "Game này dùng con trỏ riêng và đang chạy Fullscreen nên EzCursor không thể hiện con trỏ. Hãy chuyển game sang Borderless hoặc Windowed.":
         "This game uses its own cursor and runs in exclusive Fullscreen, so EzCursor can't show its cursor. Switch the game to Borderless or Windowed.",
+    "Giữ con trỏ trên thanh taskbar": "Keep cursor on the taskbar",
+    "Rê chuột xuống taskbar vẫn dùng con trỏ EzCursor.": "Keep the EzCursor cursor when you move over the taskbar.",
+    "Đoán trước vị trí con trỏ": "Predict cursor position",
+    "Bù thêm nửa khung hình khi rê nhanh; có thể trượt nhẹ khi đổi hướng.":
+        "Gains half a frame on fast moves; may overshoot slightly when you change direction.",
     "Chế độ con trỏ": "Cursor mode", "Lớp phủ": "Overlay", "Con trỏ thật": "Real cursor",
     "Không độ trễ, chạy cả Fullscreen. Không có lấp lánh, ombre chuyển động.":
         "Zero lag, works in Fullscreen too. No sparkle or animated ombre.",
@@ -1983,13 +2002,20 @@ class LayeredOverlay:
         gdi32.DeleteDC(mem)
         user32.ReleaseDC(None, screen)
 
+    MOVE_FLAGS = 0x1 | 0x4 | 0x10 | 0x200 | 0x400      # NOSIZE | NOZORDER | NOACTIVATE | NOOWNERZORDER | NOSENDCHANGING
+
     def move(self, x, y):
-        user32.SetWindowPos(self.hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
+        user32.SetWindowPos(self.hwnd, None, x, y, 0, 0, self.MOVE_FLAGS)
+
+    def raise_top(self):
+        user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, 0x1 | 0x2 | 0x10)  # NOSIZE | NOMOVE | NOACTIVATE
 
     def show(self, on):
         if on != self.visible:
             user32.ShowWindow(self.hwnd, 4 if on else 0)    # SW_SHOWNOACTIVATE / SW_HIDE
             self.visible = on
+            if on:
+                self.raise_top()
 
     def destroy(self):
         try:
@@ -2019,8 +2045,12 @@ def class_name(h):
     return buf.value
 
 
-def shell_ui_open():
-    """True khi giao diện riêng của Windows (Start, Search, taskbar, xem trước...) đang mở hoặc ở dưới chuột."""
+TASKBAR_CLASSES = {"Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
+
+
+def shell_ui_open(keep_taskbar=False):
+    """True khi giao diện riêng của Windows (Start, Search, taskbar, xem trước...) đang mở hoặc ở dưới chuột.
+    keep_taskbar: rê chuột trên thanh taskbar vẫn giữ con trỏ EzCursor."""
     h = user32.GetForegroundWindow()
     if h:
         exe = exe_name(pid_of(h)).lower()
@@ -2034,7 +2064,8 @@ def shell_ui_open():
     under = user32.WindowFromPoint(pt)
     if under:
         root = user32.GetAncestor(under, 2) or under          # GA_ROOT
-        if class_name(root) not in SHELL_HOVER_OK:
+        cls = class_name(root)
+        if cls not in SHELL_HOVER_OK and not (keep_taskbar and cls in TASKBAR_CLASSES):
             exe = exe_name(pid_of(root)).lower()
             if exe in SHELL_UI_EXES or exe == "explorer.exe":
                 return True
@@ -2506,6 +2537,7 @@ class App:
         self.tick()
         self.anim()
         self.fx_loop()
+        self.follow_loop()
         self.ov.after(5000, self.auto_check_update)
         if not self.cfg["setup_done"] or "--setup" in sys.argv:
             self.ov.after(700, self.wait_setup)
@@ -2710,6 +2742,15 @@ class App:
             return
         self.cfg.target = style
         self.load_image(self.cfg["image"], silent=True) if self.cfg["image"] else self.clear_image()
+        try:
+            hidden = not self.win.winfo_viewable()
+        except tk.TclError:
+            hidden = False
+        if hidden:          # cửa sổ đang ẩn (đang chơi game): chỉ đổi con trỏ, giao diện cập nhật khi mở lại
+            self.rebuild_overlay()
+            self.update_status()
+            self.ui_dirty = True
+            return
         self.sync_style_widgets()
         self.refresh()
 
@@ -4183,7 +4224,7 @@ class App:
         box.pack(fill="x")
 
         r = ctk.CTkFrame(box, fg_color="transparent")
-        r.pack(fill="x", padx=18, pady=(7, 0))
+        r.pack(fill="x", padx=18, pady=(5, 0))
         t = ctk.CTkFrame(r, fg_color="transparent")
         t.pack(side="left")
         ctk.CTkLabel(t, text=T("Ngôn ngữ"), font=self.F.b(14, strong=True), text_color=TEXT, height=20).pack(anchor="w")
@@ -4197,11 +4238,11 @@ class App:
             selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
         self.lang_seg.set(dict(LANGUAGES)[self.cfg["language"]])
         self.lang_seg.pack(side="right")
-        ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(7, 0))
+        ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(5, 0))
 
         if REAL_CURSOR_MODE:
             r = ctk.CTkFrame(box, fg_color="transparent")
-            r.pack(fill="x", padx=18, pady=(7, 0))
+            r.pack(fill="x", padx=18, pady=(5, 0))
             t = ctk.CTkFrame(r, fg_color="transparent")
             t.pack(side="left")
             ctk.CTkLabel(t, text=T("Chế độ con trỏ"), font=self.F.b(14, strong=True), text_color=TEXT,
@@ -4215,30 +4256,36 @@ class App:
                 unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
                 selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
             self.mode_seg.pack(side="right")
-            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(7, 0))
+            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(5, 0))
             self.update_mode_ui()
 
         self.hide_var = tk.BooleanVar(value=self.cfg["hide_real"])
         self.startup_var = tk.BooleanVar(value=is_startup_enabled())
         self.auto_upd_var = tk.BooleanVar(value=self.cfg["auto_check_update"])
         self.splash_var = tk.BooleanVar(value=self.cfg["splash"])
+        self.taskbar_var = tk.BooleanVar(value=self.cfg["keep_taskbar"])
+        self.predict_var = tk.BooleanVar(value=self.cfg["predict"])
         rows = [("Ẩn con trỏ thật của game", "Chỉ hiện con trỏ của EzCursor khi đang ở trong game.",
                  self.hide_var, self.set_hide),
                 ("Khởi động cùng Windows", "Chạy ngầm dưới khay hệ thống khi bật máy.",
                  self.startup_var, self.set_startup_opt),
                 ("Tự động kiểm tra cập nhật", "Thông báo khi có phiên bản mới trên GitHub.",
                  self.auto_upd_var, self.set_auto_update),
+                ("Giữ con trỏ trên thanh taskbar", "Rê chuột xuống taskbar vẫn dùng con trỏ EzCursor.",
+                 self.taskbar_var, self.set_keep_taskbar),
+                ("Đoán trước vị trí con trỏ", "Bù thêm nửa khung hình khi rê nhanh; có thể trượt nhẹ khi đổi hướng.",
+                 self.predict_var, self.set_predict),
                 ("Màn hình chào khi mở", "Hiện logo động khoảng 2 giây mỗi lần mở EzCursor.",
                  self.splash_var, self.set_splash)]
         for title, sub, var, cmd in rows:
             r = ctk.CTkFrame(box, fg_color="transparent")
-            r.pack(fill="x", padx=18, pady=(7, 0))
+            r.pack(fill="x", padx=18, pady=(5, 0))
             t = ctk.CTkFrame(r, fg_color="transparent")
             t.pack(side="left")
             ctk.CTkLabel(t, text=T(title), font=self.F.b(14, strong=True), text_color=TEXT, height=20).pack(anchor="w")
             ctk.CTkLabel(t, text=T(sub), font=self.F.b(12), text_color=TEXT2, height=18).pack(anchor="w")
             self.switch(r, var, cmd).pack(side="right")
-            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(7, 0))
+            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(5, 0))
 
         r = ctk.CTkFrame(box, fg_color="transparent")
         r.pack(fill="x", padx=18, pady=12)
@@ -4781,10 +4828,26 @@ class App:
             out["right"] = c["hold_right_color"]
         return out
 
+    def render_key(self):
+        c = self.cfg
+        style = json.dumps({k: c[k] for k in STYLE_KEYS}, sort_keys=True, default=str)
+        return (style, self.eff_size(), id(self.src_img), self.animated_image())
+
     def rebuild_overlay(self):
-        self.composed = self.compose_cursor()
-        self.variants = {k: (self.composed if col is None else self.compose_cursor(col))
-                         for k, col in self.hold_colors().items()}
+        cache = self.__dict__.setdefault("render_cache", collections.OrderedDict())
+        key = self.render_key()
+        self.render_key_now = key
+        hit = cache.get(key)
+        if hit is not None:
+            cache.move_to_end(key)
+            self.composed, self.variants = hit["composed"], hit["variants"]
+        else:
+            self.composed = self.compose_cursor()
+            self.variants = {k: (self.composed if col is None else self.compose_cursor(col))
+                             for k, col in self.hold_colors().items()}
+            hit = cache[key] = {"composed": self.composed, "variants": self.variants}
+            while len(cache) > 6:
+                cache.popitem(last=False)
         im, self.ov_hot, _ = self.composed
         if getattr(self, "sys_cache", None) is not None:
             self.drop_system_cache()
@@ -4798,10 +4861,27 @@ class App:
         if getattr(self, "_cf_job", None):
             self.ov.after_cancel(self._cf_job)
             self._cf_job = None
+        if hit.get("frame_sets"):            # khung hình đã dựng trước đó: dùng lại ngay
+            self.frame_sets = hit["frame_sets"]
+            self.cursor_durations = hit["durations"]
+            self.preview_photos = hit["photos"]
+            self.ov_hot = hit["ov_hot"]
+            self.cursor_frames = self.frame_sets.get(self.hold_state) or self.frame_sets[None]
+            self.cf_idx, self.cf_next, self.pv_idx, self.pv_next = 0, 0.0, 0, 0.0
+            self.show_img(self.cursor_frames[0])
+            if self.active:
+                self.move_overlay()
+            return
         if self.animated_image():
             self._cf_job = self.ov.after(160, self.build_image_frames)
         elif self.cfg["cursor_sparkle"] or self.ombre_moving():
             self._cf_job = self.ov.after(160, self.build_cursor_frames)
+
+    def remember_frames(self):
+        hit = getattr(self, "render_cache", {}).get(getattr(self, "render_key_now", None))
+        if hit is not None and self.frame_sets:
+            hit.update(frame_sets=self.frame_sets, durations=self.cursor_durations,
+                       photos=self.preview_photos, ov_hot=self.ov_hot)
 
     def ombre_moving(self):
         return self.cfg["ombre"] and self.cfg["ombre_anim"] and not self.animated_image()
@@ -4836,6 +4916,7 @@ class App:
         self.pv_idx, self.pv_next = 0, 0.0
         photos = {}
         self.preview_photos = [photos.setdefault(id(fr), ImageTk.PhotoImage(fr, master=self.ov)) for fr in frames]
+        self.remember_frames()
 
     def build_cursor_frames(self):
         """24 khung hình: ngôi sao nhấp nháy quanh con trỏ và/hoặc dải màu ombre chạy."""
@@ -4864,6 +4945,7 @@ class App:
         if self.active:
             self.move_overlay()
         self.preview_photos = [ImageTk.PhotoImage(fr, master=self.ov) for fr in sets[None]]
+        self.remember_frames()
 
     def sparkle_frames(self, composed, ims=None):
         """24 khung hình có ngôi sao nhấp nháy quanh con trỏ; trả về (khung hình, phần lề thêm).
@@ -4963,7 +5045,7 @@ class App:
     def compute_active(self):
         if not self.enabled:
             return False
-        self.shell_open = shell_ui_open()
+        self.shell_open = shell_ui_open(self.cfg["keep_taskbar"])
         if self.shell_open:          # menu Start, Search, Alt+Tab... -> dùng con trỏ thật
             return False
         self.fg_exe = foreground_exe()
@@ -5567,9 +5649,80 @@ class App:
         if self.find_t0 is None:
             self.ovl.set_image(im)
 
+    def record_perf(self, now):
+        """Đo nhịp vòng lặp khi con trỏ đang hiện; ghi log một lần sau ~20 giây."""
+        pf = self.__dict__.setdefault("perf", {"t0": None, "n": 0, "gap": 0.0, "last": 0.0, "done": False})
+        if pf["done"]:
+            return
+        if pf["t0"] is None:
+            pf.update(t0=now, last=now)
+            return
+        if pf["last"] is None:          # vừa quay lại game sau khi tạm tắt
+            pf["last"] = now
+            return
+        pf["n"] += 1
+        pf["gap"] = max(pf["gap"], now - pf["last"])
+        pf["last"] = now
+        if now - pf["t0"] >= 20:
+            pf["done"] = True
+            log.info("Độ trễ lớp phủ: bám chuột mỗi %.1f ms, chậm nhất %.0f ms, đoán trước: %s, màn hình %d Hz",
+                     (now - pf["t0"]) * 1000 / max(1, pf["n"]), pf["gap"] * 1000,
+                     "bật" if self.cfg["predict"] else "tắt", self.refresh_hz())
+
+    def refresh_hz(self):
+        if not getattr(self, "_hz", None):
+            try:
+                hdc = user32.GetDC(None)
+                hz = ctypes.windll.gdi32.GetDeviceCaps(hdc, 116)          # VREFRESH
+                user32.ReleaseDC(None, hdc)
+                self._hz = hz if isinstance(hz, int) and 30 <= hz <= 500 else 60
+            except Exception:
+                self._hz = 60
+        return self._hz
+
+    def predicted(self, x, y):
+        """Đoán vị trí chuột sau ~nửa khung hình theo tốc độ hiện tại (đổi hướng / chậm thì không đoán)."""
+        now = time.perf_counter()
+        hist = self.__dict__.setdefault("mhist", collections.deque(maxlen=16))
+        hist.append((now, x, y))
+        old = next((h for h in hist if now - h[0] <= 0.012), None)
+        if old is None or now - old[0] < 0.003:
+            return x, y
+        dt = now - old[0]
+        vx, vy = (x - old[1]) / dt, (y - old[2]) / dt
+        pv = getattr(self, "prev_v", (0.0, 0.0))
+        self.prev_v = (vx, vy)
+        if vx * pv[0] + vy * pv[1] < 0 or (vx * vx + vy * vy) < 200 ** 2:     # đổi hướng hoặc rê chậm
+            return x, y
+        lead = 0.5 / self.refresh_hz()
+        dx, dy = vx * lead, vy * lead
+        m = math.hypot(dx, dy)
+        if m > 40:
+            dx, dy = dx * 40 / m, dy * 40 / m
+        return int(round(x + dx)), int(round(y + dy))
+
+    def follow_loop(self):
+        """Vòng bám chuột riêng, rất nhẹ (~1 ms) – chỉ dời cửa sổ con trỏ khi đang hiện bằng lớp phủ."""
+        if self.quitting:
+            return
+        busy = False
+        try:
+            if self.active and self.find_t0 is None and not self.system_mode():
+                busy = True
+                self.move_overlay(only_if_moved=True)
+                self.record_perf(time.perf_counter())
+        except Exception:
+            self.report_error("follow", once=True)
+        try:
+            self.ov.after(1 if busy else 50, self.follow_loop)
+        except tk.TclError:
+            pass
+
     def move_overlay(self, only_if_moved=False):
         pt = wintypes.POINT()
         user32.GetCursorPos(ctypes.byref(pt))
+        if self.cfg["predict"] and self.find_hot is None:
+            pt.x, pt.y = self.predicted(pt.x, pt.y)
         hot = self.find_hot or self.ov_hot
         key = (pt.x, pt.y, hot)
         if only_if_moved and key == self.last_move:
@@ -5704,6 +5857,16 @@ class App:
             pass
 
     def show_window(self):
+        if getattr(self, "ui_dirty", False):
+            self.ui_dirty = False
+            try:
+                self.sync_style_widgets()
+                self.update_controls()
+                self.update_library()
+                self.update_fx_ui()
+                self.update_preview()
+            except Exception:
+                self.report_error("ui refresh", once=True)
         self.win.deiconify()
         self.win.lift()
         self.win.focus_force()
@@ -5759,6 +5922,14 @@ class App:
             self.icon.update_menu()
         except Exception:
             pass
+
+    def set_predict(self):
+        self.cfg["predict"] = bool(self.predict_var.get())
+        self.save()
+
+    def set_keep_taskbar(self):
+        self.cfg["keep_taskbar"] = bool(self.taskbar_var.get())
+        self.save()
 
     def set_splash(self):
         self.cfg["splash"] = bool(self.splash_var.get())
@@ -6118,8 +6289,13 @@ class App:
             self.set_hold("right" if r and c["hold_right"] else "left" if l and c["hold_left"] else None)
             if not self.system_mode():
                 self.move_overlay(only_if_moved=True)
+                if now - getattr(self, "t_top", 0) >= 0.5:     # giữ cửa sổ con trỏ luôn trên cùng
+                    self.t_top = now
+                    self.ovl.raise_top()
         elif self.hold_state is not None:
             self.set_hold(None)
+        if not self.active and getattr(self, "perf", None):
+            self.perf["last"] = None
         return True
 
     # ------------------------------------------------------------ Lỗi & nhật ký

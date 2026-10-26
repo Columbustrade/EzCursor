@@ -1,9 +1,13 @@
 ✦ Mới trong 2.2.0
 - Tạo con trỏ: Bộ sưu tập → Của bạn → "✦ Tạo con trỏ". Chọn 1 trong 10 hình (mũi tên nhọn, bo tròn, mảnh, pha lê, giọt nước, tam giác, kim cương, chấm, vòng, tâm ngắm), chỉnh độ rộng, đuôi, bo góc, xoay; tô một màu, ombre hoặc kính mờ; thêm viền trong / viền ngoài, chấm sáng ở mũi, vệt sáng, bóng đổ. Xem trước ở kích thước thật trên nền tối và sáng, bấm vào hình để đặt điểm click
 - Con trỏ tự tạo được lưu vào "Của bạn" (file .cur) và có nút "Sửa con trỏ này" để chỉnh lại bất cứ lúc nào
+- Rê chuột xuống thanh taskbar vẫn giữ con trỏ EzCursor (tắt được trong tab Tùy chọn → "Giữ con trỏ trên thanh taskbar"). Menu Start, Tìm kiếm và Alt+Tab vẫn dùng con trỏ thường của Windows
+- Con trỏ bám chuột sát hơn: độ trễ lớp phủ giảm còn khoảng 1 khung hình; không còn khựng khi Alt+Tab hoặc chuyển qua lại giữa các game. Thêm tùy chọn "Đoán trước vị trí con trỏ" (mặc định bật, tắt được trong tab Tùy chọn) để bù thêm nửa khung hình khi rê nhanh
 - Thư viện trực tuyến có thêm 6 mẫu ombre: Kiếm Hoàng hôn, Giọt Đại dương, Pha lê Cầu vồng, Lông vũ Hư không, Ngôi sao Băng giá, Giáo Độc dược
 
 ✦ New in 2.2.0
 - Cursor maker: Library → Yours → "✦ Create cursor". Pick one of 10 shapes (sharp, rounded or slim arrow, shard, droplet, triangle, diamond, dot, ring, crosshair), adjust width, tail, roundness and rotation; fill with a solid color, ombre or glass; add inner / outer outlines, a tip dot, shine and shadow. Preview at actual size on dark and light backgrounds, and click the image to set the click point
 - Cursors you make are saved to "Yours" (.cur files), with an "Edit this cursor" button to tweak them anytime
+- The EzCursor cursor now stays when you move over the taskbar (can be turned off in Options → "Keep cursor on the taskbar"). Start, Search and Alt+Tab still use the normal Windows cursor
+- Lower cursor lag: the overlay now trails the mouse by about one frame, and no longer stutters on Alt+Tab or when switching games. New "Predict cursor position" option (on by default, can be turned off in Options) gains another half frame on fast moves
 - 6 new ombre designs in the online library: Sunset Blade, Ocean Drop, Rainbow Crystal, Void Feather, Frost Star, Toxic Spear
