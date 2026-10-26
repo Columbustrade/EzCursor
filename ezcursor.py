@@ -117,7 +117,149 @@ def show_real_cursor(show):
         _cursor_shown = show
 
 
+# ---------------------------------------------------------------- Chế độ "Con trỏ thật" (thay con trỏ Windows)
+REAL_CURSOR_MODE = False      # chế độ "Con trỏ thật" đang ẩn (để dành); True = hiện lựa chọn trong tab Tùy chọn
+SPI_SETCURSORS = 0x0057
+IMAGE_CURSOR = 2
+SYS_CURSOR_IDS = (32512, 32513, 32514, 32515, 32516, 32648, 32649, 32650, 32651)   # mũi tên, chữ I, chờ, thập...
+_sys_applied = False
+
+
+class ICONINFO(ctypes.Structure):
+    _fields_ = [("fIcon", wintypes.BOOL), ("xHotspot", wintypes.DWORD), ("yHotspot", wintypes.DWORD),
+                ("hbmMask", wintypes.HBITMAP), ("hbmColor", wintypes.HBITMAP)]
+
+
+class BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG),
+                ("biPlanes", wintypes.WORD), ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
+                ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG),
+                ("biYPelsPerMeter", wintypes.LONG), ("biClrUsed", wintypes.DWORD), ("biClrImportant", wintypes.DWORD)]
+
+
+_gdi = ctypes.windll.gdi32
+try:
+    _gdi.CreateDIBSection.restype = ctypes.c_void_p
+    _gdi.CreateDIBSection.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint,
+                                      ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.c_uint]
+    _gdi.CreateBitmap.restype = ctypes.c_void_p
+    _gdi.CreateBitmap.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p]
+    _gdi.DeleteObject.argtypes = [ctypes.c_void_p]
+    user32.CreateIconIndirect.restype = ctypes.c_void_p
+    user32.CreateIconIndirect.argtypes = [ctypes.POINTER(ICONINFO)]
+    user32.CopyImage.restype = ctypes.c_void_p
+    user32.CopyImage.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+    user32.SetSystemCursor.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+    user32.DestroyCursor.argtypes = [ctypes.c_void_p]
+    user32.GetDC.restype = ctypes.c_void_p
+    user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+except Exception:
+    pass
+
+
+def make_hcursor(im, hot):
+    """Ảnh RGBA -> HCURSOR 32 bit có kênh trong suốt (tối đa 256 px)."""
+    im = im.convert("RGBA")
+    if max(im.size) > 256:
+        k = 256 / max(im.size)
+        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+        hot = (round(hot[0] * k), round(hot[1] * k))
+    w, h = im.size
+    bmi = BITMAPINFOHEADER(biSize=ctypes.sizeof(BITMAPINFOHEADER), biWidth=w, biHeight=-h, biPlanes=1,
+                           biBitCount=32, biCompression=0)
+    bits = ctypes.c_void_p()
+    hdc = user32.GetDC(None)
+    color = _gdi.CreateDIBSection(hdc, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
+    user32.ReleaseDC(None, hdc)
+    if not color or not bits:
+        raise OSError("CreateDIBSection")
+    data = im.tobytes("raw", "BGRA")
+    ctypes.memmove(bits, data, len(data))
+    stride = (w + 15) // 16 * 2
+    zeros = ctypes.create_string_buffer(stride * h)
+    mask = _gdi.CreateBitmap(w, h, 1, 1, zeros)
+    info = ICONINFO(False, max(0, min(w - 1, int(hot[0]))), max(0, min(h - 1, int(hot[1]))), mask, color)
+    hc = user32.CreateIconIndirect(ctypes.byref(info))
+    _gdi.DeleteObject(color)
+    _gdi.DeleteObject(mask)
+    if not hc:
+        raise OSError("CreateIconIndirect")
+    return hc
+
+
+def set_system_cursors(hcur):
+    """Đặt con trỏ Windows (mũi tên, chữ I, chờ...) thành hcur. SetSystemCursor hủy handle nên mỗi lần dùng bản sao."""
+    global _sys_applied
+    if not _sys_applied:
+        try:
+            SYS_FLAG.write_text("1", encoding="utf-8")
+        except OSError:
+            pass
+    _sys_applied = True
+    ok, errs = 0, []
+    for oid in SYS_CURSOR_IDS:
+        h = user32.CopyImage(hcur, IMAGE_CURSOR, 0, 0, 0)
+        if not h:
+            errs.append(f"copy {oid}:{kernel32.GetLastError()}")
+            continue
+        if user32.SetSystemCursor(h, oid):
+            ok += 1
+        else:
+            errs.append(f"set {oid}:{kernel32.GetLastError()}")
+    return ok, errs
+
+
+class CURSORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD), ("hCursor", ctypes.c_void_p),
+                ("ptScreenPos", wintypes.POINT)]
+
+
+try:
+    user32.LoadCursorW.restype = ctypes.c_void_p
+    user32.LoadCursorW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    user32.GetCursorInfo.argtypes = [ctypes.POINTER(CURSORINFO)]
+except Exception:
+    pass
+_shared_cursors = None
+
+
+def current_cursor():
+    """(đang hiện?, handle con trỏ đang dùng)."""
+    ci = CURSORINFO(cbSize=ctypes.sizeof(CURSORINFO))
+    if not user32.GetCursorInfo(ctypes.byref(ci)):
+        return True, None
+    return bool(ci.flags & 1), ci.hCursor
+
+
+def is_system_cursor(h):
+    """Con trỏ đang hiện có phải con trỏ chung của Windows (mũi tên, chữ I...) – tức là con trỏ EzCursor đã thay?"""
+    global _shared_cursors
+    if _shared_cursors is None:
+        _shared_cursors = {user32.LoadCursorW(None, ctypes.c_void_p(oid)) for oid in SYS_CURSOR_IDS} - {None, 0}
+    return h in _shared_cursors
+
+
+def restore_system_cursors(force=False):
+    """Trả lại bộ con trỏ Windows của người dùng."""
+    global _sys_applied
+    if not (_sys_applied or force):
+        return
+    try:
+        user32.SystemParametersInfoW(SPI_SETCURSORS, 0, None, 0)
+    except Exception:
+        pass
+    _sys_applied = False
+    try:
+        SYS_FLAG.unlink()
+    except OSError:
+        pass
+
+
 def cleanup():
+    try:
+        restore_system_cursors()
+    except Exception:
+        pass
     try:
         mag.MagShowSystemCursor(True)
         mag.MagUninitialize()
@@ -134,6 +276,10 @@ def emergency_cursor():
     try:
         mag.MagShowSystemCursor(True)
         _cursor_shown = True
+    except Exception:
+        pass
+    try:
+        restore_system_cursors()
     except Exception:
         pass
 
@@ -284,6 +430,9 @@ APP_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = APP_DIR / "config.json"
 SHOW_FLAG = APP_DIR / "show.flag"
 QUIT_FLAG = APP_DIR / "quit.flag"
+SYS_FLAG = APP_DIR / "syscursor.flag"     # có file này = con trỏ Windows đang bị EzCursor thay
+if SYS_FLAG.exists():
+    restore_system_cursors(force=True)
 MY_DIR = APP_DIR / "my_cursors"        # "Con trỏ của bạn" (1.9.0)
 MY_EXTS = {".png", ".gif", ".webp", ".ico", ".cur", ".ani", ".bmp", ".jpg", ".jpeg"}   # bộ cài dùng để yêu cầu thoát
 
@@ -334,6 +483,8 @@ DEFAULT_CFG = {
     "find_shake": True,
     "catalog_got": {},        # con trỏ đã tải từ kho trực tuyến: {id: tên file trong my_cursors}
     "made_cursors": {},       # con trỏ tự tạo: {tên file trong my_cursors: thông số} để mở lại sửa
+    "sys_skip": [],            # game tự đặt con trỏ riêng -> dùng Lớp phủ dù đang ở chế độ Con trỏ thật
+    "cursor_mode": "overlay",  # "overlay" (lớp phủ, nhiều hiệu ứng) / "system" (con trỏ thật, không độ trễ)
     "setup_done": False,      # đã qua màn hình thiết lập lần đầu
     "favorites": [],          # con trỏ yêu thích: mã hình, "bib:<tên>" hoặc "my:<tên file>"
     "profiles": [],      # hồ sơ riêng: [{"name": ..., "exes": [...], "style": {...}}]
@@ -552,6 +703,10 @@ def load_cfg():
     cfg["profiles"] = profiles
     cfg["dpi_scale"] = bool(cfg.get("dpi_scale"))
     cfg["find_shake"] = bool(cfg.get("find_shake", True))
+    sk = cfg.get("sys_skip") if isinstance(cfg.get("sys_skip"), list) else []
+    cfg["sys_skip"] = [x for x in sk if isinstance(x, str)][:50]
+    if cfg.get("cursor_mode") not in ("overlay", "system"):
+        cfg["cursor_mode"] = "overlay"
     made = cfg.get("made_cursors") if isinstance(cfg.get("made_cursors"), dict) else {}
     cfg["made_cursors"] = {k: v for k, v in made.items() if isinstance(k, str) and isinstance(v, dict)}
     got = cfg.get("catalog_got") if isinstance(cfg.get("catalog_got"), dict) else {}
@@ -766,6 +921,18 @@ TR_EN = {
     "Tam giác": "Triangle", "Chấm": "Dot", "Vòng": "Ring",
     "Chưa có con trỏ nào. Tự tạo một con trỏ, hoặc bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF hay file .cur, .ani.":
         "No cursors yet. Create one, or click \"+ Add cursor\" to add a PNG, GIF, .cur or .ani file.",
+    "{g} dùng con trỏ riêng của game nên chế độ Con trỏ thật không đổi được. EzCursor đã chuyển sang Lớp phủ cho game này.":
+        "{g} uses its own cursor, so Real cursor mode can't replace it. EzCursor switched to Overlay for this game.",
+    "Game này dùng con trỏ riêng và đang chạy Fullscreen nên EzCursor không thể hiện con trỏ. Hãy chuyển game sang Borderless hoặc Windowed.":
+        "This game uses its own cursor and runs in exclusive Fullscreen, so EzCursor can't show its cursor. Switch the game to Borderless or Windowed.",
+    "Chế độ con trỏ": "Cursor mode", "Lớp phủ": "Overlay", "Con trỏ thật": "Real cursor",
+    "Không độ trễ, chạy cả Fullscreen. Không có lấp lánh, ombre chuyển động.":
+        "Zero lag, works in Fullscreen too. No sparkle or animated ombre.",
+    "Đủ hiệu ứng. Game cần chạy Borderless hoặc Windowed.": "All effects. The game must run Borderless or Windowed.",
+    "Game đang chạy Fullscreen nên EzCursor không vẽ được con trỏ. Hãy chuyển game sang Borderless hoặc Windowed, "
+    "hoặc bật chế độ \"Con trỏ thật\" trong tab Tùy chọn.":
+        "The game is running in exclusive Fullscreen, so EzCursor can't draw its cursor. Switch the game to "
+        "Borderless or Windowed, or turn on \"Real cursor\" mode in the Options tab.",
     "Của bạn": "Yours", "Tô màu": "Tinted", "+ Thêm con trỏ": "+ Add cursor", "Xóa con trỏ này": "Delete this cursor",
     "Xóa con trỏ \"{n}\" khỏi bộ sưu tập?": "Remove the cursor \"{n}\" from your library?",
     "Chưa có con trỏ nào. Bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF hoặc file con trỏ .cur, .ani.":
@@ -2216,6 +2383,9 @@ class App:
         self.play_profile = None        # hồ sơ của game đang chơi
         self.tray_pr = None             # hồ sơ mà menu khay đang áp vào (game chơi gần nhất / hồ sơ chọn gần nhất)
         self.tray_sig = None
+        self.sys_cache = {}            # HCURSOR đã tạo cho từng biến thể (chế độ Con trỏ thật)
+        self.mode_on = None
+        self.sys_key = "?"
         self.cat_entries = None         # danh sách kho trực tuyến (None = chưa tải)
         self.cat_status = ("idle", 0)
         self.cat_busy = False
@@ -3941,7 +4111,7 @@ class App:
             c = self.cfg
             if self.find_t0 is not None:
                 self.find_frame(now)
-            if self.cursor_frames and self.active and now * 1000 >= self.cf_next:
+            if self.cursor_frames and self.active and not self.system_mode() and now * 1000 >= self.cf_next:
                 self.cf_idx = (self.cf_idx + 1) % len(self.cursor_frames)
                 self.cf_next = now * 1000 + self.cursor_durations[self.cf_idx]
                 self.show_img(self.cursor_frames[self.cf_idx])
@@ -4029,6 +4199,25 @@ class App:
         self.lang_seg.pack(side="right")
         ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(7, 0))
 
+        if REAL_CURSOR_MODE:
+            r = ctk.CTkFrame(box, fg_color="transparent")
+            r.pack(fill="x", padx=18, pady=(7, 0))
+            t = ctk.CTkFrame(r, fg_color="transparent")
+            t.pack(side="left")
+            ctk.CTkLabel(t, text=T("Chế độ con trỏ"), font=self.F.b(14, strong=True), text_color=TEXT,
+                         height=20).pack(anchor="w")
+            self.mode_sub = ctk.CTkLabel(t, text="", font=self.F.b(12), text_color=TEXT2, height=18)
+            self.mode_sub.pack(anchor="w")
+            self.mode_map = {T("Lớp phủ"): "overlay", T("Con trỏ thật"): "system"}
+            self.mode_seg = ctk.CTkSegmentedButton(
+                r, values=list(self.mode_map), command=lambda v: self.set_cursor_mode(self.mode_map[v]), height=32,
+                font=self.F.b(12, strong=True), fg_color=FIELD, unselected_color=FIELD,
+                unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
+                selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
+            self.mode_seg.pack(side="right")
+            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(7, 0))
+            self.update_mode_ui()
+
         self.hide_var = tk.BooleanVar(value=self.cfg["hide_real"])
         self.startup_var = tk.BooleanVar(value=is_startup_enabled())
         self.auto_upd_var = tk.BooleanVar(value=self.cfg["auto_check_update"])
@@ -4061,21 +4250,12 @@ class App:
         ctk.CTkLabel(v, text=APP_VERSION, font=self.F.m(13), text_color=ACCENT, height=20).pack(side="left")
         self.upd_label = ctk.CTkLabel(t, text="", font=self.F.b(12), text_color=TEXT2, height=18)
         self.upd_label.pack(anchor="w")
-        self.cyan_button(r, "Kiểm tra cập nhật", lambda: self.check_update(manual=True)).pack(side="right")
-        self.cyan_button(r, "Mở thư mục log", self.open_log_folder).pack(side="right", padx=(0, 8))
-
-        r = ctk.CTkFrame(box, fg_color="transparent")
-        r.pack(fill="x", padx=18, pady=(0, 12))
-        t = ctk.CTkFrame(r, fg_color="transparent")
-        t.pack(side="left")
-        ctk.CTkLabel(t, text=T("Khôi phục cài đặt gốc"), font=self.F.b(14, strong=True), text_color=TEXT,
-                     height=20).pack(anchor="w")
-        ctk.CTkLabel(t, text=T("Xóa mọi lựa chọn đã lưu và khởi động lại EzCursor như mới cài."),
-                     font=self.F.b(12), text_color=TEXT2, height=18).pack(anchor="w")
-        ctk.CTkButton(r, text=T("Khôi phục"), command=self.reset_settings, height=40, width=120, corner_radius=10,
-                      border_width=1, border_color="#FF5A5A", fg_color=mix(CARD, "#FF5A5A", 0.10),
+        ctk.CTkButton(r, text=T("Khôi phục cài đặt gốc"), command=self.reset_settings, height=40, width=10,
+                      corner_radius=10, border_width=1, border_color="#FF5A5A", fg_color=mix(CARD, "#FF5A5A", 0.10),
                       hover_color=mix(CARD, "#FF5A5A", 0.22), text_color="#FF8A8A",
                       font=self.F.b(13, strong=True)).pack(side="right")
+        self.cyan_button(r, "Kiểm tra cập nhật", lambda: self.check_update(manual=True)).pack(side="right", padx=(0, 8))
+        self.cyan_button(r, "Mở thư mục log", self.open_log_folder).pack(side="right", padx=(0, 8))
 
         hk = self.card(page)
         hk.pack(fill="x", pady=(12, 0))
@@ -4606,6 +4786,10 @@ class App:
         self.variants = {k: (self.composed if col is None else self.compose_cursor(col))
                          for k, col in self.hold_colors().items()}
         im, self.ov_hot, _ = self.composed
+        if getattr(self, "sys_cache", None) is not None:
+            self.drop_system_cache()
+            if self.active and self.system_mode():
+                self.apply_system_cursor(force=True)
         self.cursor_frames = None
         self.frame_sets = None
         self.cursor_durations = None
@@ -4724,6 +4908,9 @@ class App:
             return
         self.hold_state = state
         key = state if state in self.variants else None
+        if self.active and self.system_mode():
+            self.apply_system_cursor()
+            return
         if self.frame_sets:
             self.cursor_frames = self.frame_sets.get(key) or self.frame_sets[None]
             self.show_img(self.cursor_frames[self.cf_idx % len(self.cursor_frames)])
@@ -4787,6 +4974,9 @@ class App:
         if not want:
             self.fs_block = False
             return False
+        if self.system_mode():
+            self.fs_block = False
+            return True
         now = time.perf_counter()
         if now - self.fs_checked > 0.5:          # kiểm tra Fullscreen 2 lần/giây là đủ
             self.fs_checked = now
@@ -4803,9 +4993,49 @@ class App:
         if key in self.fs_warned:
             return
         self.fs_warned.add(key)
+        own = key in self.cfg["sys_skip"]       # game tự đặt con trỏ riêng: Con trỏ thật cũng không giúp được
         try:
-            self.icon.notify(T("Game đang chạy Fullscreen nên EzCursor không vẽ được con trỏ. "
+            self.icon.notify(T("Game này dùng con trỏ riêng và đang chạy Fullscreen nên EzCursor không thể hiện "
+                               "con trỏ. Hãy chuyển game sang Borderless hoặc Windowed.") if own else
+                             T("Game đang chạy Fullscreen nên EzCursor không vẽ được con trỏ. "
+                               "Hãy chuyển game sang Borderless hoặc Windowed, hoặc bật chế độ "
+                               "\"Con trỏ thật\" trong tab Tùy chọn.") if REAL_CURSOR_MODE else
+                             T("Game đang chạy Fullscreen nên EzCursor không vẽ được con trỏ. "
                                "Hãy chuyển game sang Borderless hoặc Windowed trong phần cài đặt đồ họa."), APP_NAME)
+        except Exception:
+            pass
+
+    def system_mode(self):
+        """Đang dùng Con trỏ thật cho cửa sổ hiện tại (game tự đặt con trỏ riêng thì dùng Lớp phủ)."""
+        return (REAL_CURSOR_MODE and self.cfg["cursor_mode"] == "system"
+                and (getattr(self, "fg_exe", "") or "").lower() not in self.cfg["sys_skip"])
+
+    def check_game_cursor(self, now):
+        """Chế độ Con trỏ thật: game nào tự đặt / tự vẽ con trỏ thì ghi nhớ và chuyển game đó sang Lớp phủ."""
+        if now - getattr(self, "gc_t", 0) < 0.5:
+            return
+        self.gc_t = now
+        try:
+            showing, h = current_cursor()
+        except Exception:
+            return
+        foreign = (not showing) or (h is not None and not is_system_cursor(h))
+        self.gc_hits = (getattr(self, "gc_hits", 0) + 1) if foreign else 0
+        if self.gc_hits < 4:          # ~2 giây liên tục mới kết luận
+            return
+        self.gc_hits = 0
+        exe = (self.fg_exe or "").lower()
+        if not exe or exe in self.cfg["sys_skip"]:
+            return
+        self.cfg["sys_skip"] = self.cfg["sys_skip"] + [exe]
+        log.info("Con trỏ thật: %s %s -> dùng Lớp phủ cho game này", exe,
+                 "ẩn con trỏ Windows" if not showing else f"tự đặt con trỏ riêng ({h})")
+        self.save()
+        self.set_active(False)
+        self.set_active(True)
+        try:
+            self.icon.notify(T("{g} dùng con trỏ riêng của game nên chế độ Con trỏ thật không đổi được. "
+                               "EzCursor đã chuyển sang Lớp phủ cho game này.").format(g=Path(exe).stem), APP_NAME)
         except Exception:
             pass
 
@@ -4813,11 +5043,72 @@ class App:
         if on == self.active:
             return
         self.active = on
-        show_real_cursor(not (on and self.cfg["hide_real"]))
-        if on:
-            self.move_overlay()
-        self.ovl.show(on)
+        self.mode_on = self.system_mode() if on else None
+        self.gc_hits = 0
+        if not (on and self.system_mode()):      # tắt hoặc dùng Lớp phủ: luôn trả con trỏ Windows
+            self.clear_system_cursor()
+        if self.system_mode():
+            show_real_cursor(True)
+            self.ovl.show(False)
+            if on:
+                self.apply_system_cursor(force=True)
+            else:
+                self.clear_system_cursor()
+        else:
+            show_real_cursor(not (on and self.cfg["hide_real"]))
+            if on:
+                self.move_overlay()
+            self.ovl.show(on)
         self.update_status()
+
+    def apply_system_cursor(self, force=False):
+        """Chế độ Con trỏ thật: đặt con trỏ Windows thành con trỏ EzCursor (theo trạng thái giữ chuột)."""
+        key = self.hold_state if self.hold_state in self.variants else None
+        if key == self.sys_key and not force:
+            return
+        comp = self.variants.get(key) or self.composed
+        if comp is None:
+            return
+        try:
+            hc = self.sys_cache.get(key)
+            if hc is None:
+                hc = make_hcursor(comp[0], comp[1])
+                self.sys_cache[key] = hc
+            ok, errs = set_system_cursors(hc)
+            self.sys_key = key
+            if not getattr(self, "sys_logged", False) or errs:
+                self.sys_logged = True
+                log.info("Con trỏ thật: đặt %d/%d con trỏ Windows, ảnh %s, cửa sổ đang mở: %s%s", ok,
+                         len(SYS_CURSOR_IDS), comp[0].size, self.fg_exe or "?", (" | lỗi " + ", ".join(errs[:4])) if errs else "")
+        except Exception:
+            self.report_error("system cursor", once=True)
+
+    def clear_system_cursor(self):
+        restore_system_cursors()
+        self.sys_key = "?"
+
+    def drop_system_cache(self):
+        for hc in self.sys_cache.values():
+            try:
+                user32.DestroyCursor(hc)
+            except Exception:
+                pass
+        self.sys_cache = {}
+        self.sys_key = "?"
+
+    def set_cursor_mode(self, mode):
+        if mode == self.cfg["cursor_mode"]:
+            return
+        self.set_active(False)          # tắt theo chế độ cũ; vòng lặp sẽ bật lại theo chế độ mới
+        self.clear_system_cursor()
+        self.cfg["cursor_mode"] = mode
+        if mode == "system":
+            self.cfg["sys_skip"] = []
+        self.update_mode_ui()
+        self.save()
+        if mode == "system":          # cho xem thử ngay 3 giây trên màn hình hiện tại
+            self.apply_system_cursor(force=True)
+            self.ov.after(3000, lambda: None if (self.active and self.system_mode()) else self.clear_system_cursor())
 
     # ------------------------------------------------------------ Danh sách ứng dụng
     def refresh_apps(self):
@@ -5163,6 +5454,15 @@ class App:
         self.cfg["hotspot"] = h
         self.refresh()
 
+    def update_mode_ui(self):
+        try:
+            sysm = self.system_mode()
+            self.mode_seg.set({v: k for k, v in self.mode_map.items()}[self.cfg["cursor_mode"]])
+            self.mode_sub.configure(text=T("Không độ trễ, chạy cả Fullscreen. Không có lấp lánh, ombre chuyển động.")
+                                    if sysm else T("Đủ hiệu ứng. Game cần chạy Borderless hoặc Windowed."))
+        except (AttributeError, tk.TclError):
+            pass
+
     def set_hide(self):
         self.cfg["hide_real"] = bool(self.hide_var.get())
         show_real_cursor(not (self.active and self.cfg["hide_real"]))
@@ -5285,7 +5585,7 @@ class App:
         if not self.enabled:
             return
         self.find_t0 = time.perf_counter()
-        self.find_ring_only = not self.active
+        self.find_ring_only = not self.active or self.system_mode()
         self.find_cool = self.find_t0 + 1.5
 
     def find_frame(self, now):
@@ -5330,7 +5630,7 @@ class App:
         self.find_hot = None
         if self.shown_img is not None:
             self.ovl.set_image(self.shown_img)
-        if self.find_ring_only and not self.active:
+        if self.find_ring_only and (not self.active or self.system_mode()):
             self.ovl.show(False)
         self.find_ring_only = False
         self.move_overlay()
@@ -5801,6 +6101,11 @@ class App:
                 self.tray_pr = pr
                 self.use_style(self.style_of(pr))
             self.set_active(want)
+            if self.active and self.system_mode() != self.mode_on:     # đổi sang game dùng chế độ khác
+                self.set_active(False)
+                self.set_active(True)
+            if self.active and self.mode_on:
+                self.check_game_cursor(now)
             if not self.active:
                 self.use_style(self.style_of(self.edit_profile))
             if was_shell != self.shell_open:
@@ -5811,7 +6116,8 @@ class App:
             l, r = mouse_buttons()
             c = self.cfg
             self.set_hold("right" if r and c["hold_right"] else "left" if l and c["hold_left"] else None)
-            self.move_overlay(only_if_moved=True)
+            if not self.system_mode():
+                self.move_overlay(only_if_moved=True)
         elif self.hold_state is not None:
             self.set_hold(None)
         return True
@@ -5843,6 +6149,7 @@ class App:
         self.safe_mode = True
         log.critical("Lỗi lặp lại liên tục, tạm tắt con trỏ EzCursor.")
         emergency_cursor()
+        self.sys_key = "?"
         try:
             self.active = False
             self.ovl.show(False)
