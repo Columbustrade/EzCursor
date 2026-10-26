@@ -1,10 +1,160 @@
 {
   "cursors": [
-    {"id": "gold_sword", "src": "gold_sword.png", "hot": [26, 26], "name": {"vi": "Kiếm Hoàng kim", "en": "Golden Blade"}, "added": "2026-10-25"},
-    {"id": "hell_flame", "src": "hell_flame.png", "hot": [24, 24], "name": {"vi": "Lửa Địa ngục", "en": "Hellfire"}, "added": "2026-10-25"},
-    {"id": "emerald_crystal", "src": "emerald_crystal.png", "hot": [24, 24], "name": {"vi": "Pha lê Ngọc lục", "en": "Emerald Crystal"}, "added": "2026-10-25"},
-    {"id": "blood_arrow", "src": "blood_arrow.png", "hot": [24, 24], "name": {"vi": "Mũi tên Huyết", "en": "Blood Arrow"}, "added": "2026-10-25"},
-    {"id": "void_rune", "src": "void_rune.png", "hot": [128, 128], "name": {"vi": "Rune Hư không", "en": "Void Rune"}, "added": "2026-10-25"},
-    {"id": "toxic_orb", "src": "toxic_orb.png", "hot": [128, 128], "name": {"vi": "Cầu Độc", "en": "Toxic Orb"}, "added": "2026-10-25"}
+    {
+      "id": "gold_sword",
+      "src": "gold_sword.png",
+      "hot": [
+        26,
+        26
+      ],
+      "name": {
+        "vi": "Kiếm Hoàng kim",
+        "en": "Golden Blade"
+      },
+      "added": "2026-10-25"
+    },
+    {
+      "id": "hell_flame",
+      "src": "hell_flame.png",
+      "hot": [
+        24,
+        24
+      ],
+      "name": {
+        "vi": "Lửa Địa ngục",
+        "en": "Hellfire"
+      },
+      "added": "2026-10-25"
+    },
+    {
+      "id": "emerald_crystal",
+      "src": "emerald_crystal.png",
+      "hot": [
+        24,
+        24
+      ],
+      "name": {
+        "vi": "Pha lê Ngọc lục",
+        "en": "Emerald Crystal"
+      },
+      "added": "2026-10-25"
+    },
+    {
+      "id": "blood_arrow",
+      "src": "blood_arrow.png",
+      "hot": [
+        24,
+        24
+      ],
+      "name": {
+        "vi": "Mũi tên Huyết",
+        "en": "Blood Arrow"
+      },
+      "added": "2026-10-25"
+    },
+    {
+      "id": "void_rune",
+      "src": "void_rune.png",
+      "hot": [
+        128,
+        128
+      ],
+      "name": {
+        "vi": "Rune Hư không",
+        "en": "Void Rune"
+      },
+      "added": "2026-10-25"
+    },
+    {
+      "id": "toxic_orb",
+      "src": "toxic_orb.png",
+      "hot": [
+        128,
+        128
+      ],
+      "name": {
+        "vi": "Cầu Độc",
+        "en": "Toxic Orb"
+      },
+      "added": "2026-10-25"
+    },
+    {
+      "id": "sunset_blade",
+      "src": "sunset_blade.png",
+      "hot": [
+        26,
+        26
+      ],
+      "name": {
+        "vi": "Kiếm Hoàng hôn",
+        "en": "Sunset Blade"
+      },
+      "added": "2026-10-26"
+    },
+    {
+      "id": "ocean_drop",
+      "src": "ocean_drop.png",
+      "hot": [
+        21,
+        20
+      ],
+      "name": {
+        "vi": "Giọt Đại dương",
+        "en": "Ocean Drop"
+      },
+      "added": "2026-10-26"
+    },
+    {
+      "id": "rainbow_crystal",
+      "src": "rainbow_crystal.png",
+      "hot": [
+        24,
+        24
+      ],
+      "name": {
+        "vi": "Pha lê Cầu vồng",
+        "en": "Rainbow Crystal"
+      },
+      "added": "2026-10-26"
+    },
+    {
+      "id": "void_feather",
+      "src": "void_feather.png",
+      "hot": [
+        24,
+        24
+      ],
+      "name": {
+        "vi": "Lông vũ Hư không",
+        "en": "Void Feather"
+      },
+      "added": "2026-10-26"
+    },
+    {
+      "id": "frost_star",
+      "src": "frost_star.png",
+      "hot": [
+        128,
+        128
+      ],
+      "name": {
+        "vi": "Ngôi sao Băng giá",
+        "en": "Frost Star"
+      },
+      "added": "2026-10-26"
+    },
+    {
+      "id": "toxic_spear",
+      "src": "toxic_spear.png",
+      "hot": [
+        24,
+        24
+      ],
+      "name": {
+        "vi": "Giáo Độc dược",
+        "en": "Toxic Spear"
+      },
+      "added": "2026-10-26"
+    }
   ]
 }

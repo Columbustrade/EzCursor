@@ -1,9 +1,9 @@
-✦ Mới trong 2.1.0
-- Màu ombre: con trỏ chuyển màu dần từ mũi ra đuôi. Có 8 dải màu sẵn (Hoàng hôn, EzCursor, Đại dương, Lửa, Độc dược, Băng giá, Hư không, Cầu vồng) hoặc tự chọn 2–3 màu. Dùng được cho Bộ EzCursor, Bibata, hình cơ bản và con trỏ của bạn. Bật ở tab Con trỏ (dưới khung xem trước) hoặc chọn chủ đề "Ombre" trong Bộ sưu tập
-- Ombre chuyển động: dải màu chạy liên tục trên con trỏ, chọn tốc độ Chậm / Vừa / Nhanh (mặc định tắt)
-- Mỗi hồ sơ game có màu ombre riêng
+✦ Mới trong 2.2.0
+- Tạo con trỏ: Bộ sưu tập → Của bạn → "✦ Tạo con trỏ". Chọn 1 trong 10 hình (mũi tên nhọn, bo tròn, mảnh, pha lê, giọt nước, tam giác, kim cương, chấm, vòng, tâm ngắm), chỉnh độ rộng, đuôi, bo góc, xoay; tô một màu, ombre hoặc kính mờ; thêm viền trong / viền ngoài, chấm sáng ở mũi, vệt sáng, bóng đổ. Xem trước ở kích thước thật trên nền tối và sáng, bấm vào hình để đặt điểm click
+- Con trỏ tự tạo được lưu vào "Của bạn" (file .cur) và có nút "Sửa con trỏ này" để chỉnh lại bất cứ lúc nào
+- Thư viện trực tuyến có thêm 6 mẫu ombre: Kiếm Hoàng hôn, Giọt Đại dương, Pha lê Cầu vồng, Lông vũ Hư không, Ngôi sao Băng giá, Giáo Độc dược
 
-✦ New in 2.1.0
-- Ombre colors: the cursor blends from one color to the next, from tip to tail. Pick one of 8 ready-made gradients (Sunset, EzCursor, Ocean, Fire, Toxic, Frost, Void, Rainbow) or choose 2–3 colors yourself. Works with the EzCursor set, Bibata, basic shapes and your own cursors. Turn it on in the Cursor tab (below the preview) or pick the "Ombre" theme in the Library
-- Animated ombre: the gradient flows along the cursor, with Slow / Medium / Fast speeds (off by default)
-- Each game profile keeps its own ombre colors
+✦ New in 2.2.0
+- Cursor maker: Library → Yours → "✦ Create cursor". Pick one of 10 shapes (sharp, rounded or slim arrow, shard, droplet, triangle, diamond, dot, ring, crosshair), adjust width, tail, roundness and rotation; fill with a solid color, ombre or glass; add inner / outer outlines, a tip dot, shine and shadow. Preview at actual size on dark and light backgrounds, and click the image to set the click point
+- Cursors you make are saved to "Yours" (.cur files), with an "Edit this cursor" button to tweak them anytime
+- 6 new ombre designs in the online library: Sunset Blade, Ocean Drop, Rainbow Crystal, Void Feather, Frost Star, Toxic Spear

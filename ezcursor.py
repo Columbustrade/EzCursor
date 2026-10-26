@@ -47,7 +47,7 @@ import pystray
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageSequence, ImageTk
 
 APP_NAME = "EzCursor"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
 GITHUB_REPO = "ezcursor/EzCursor"
@@ -333,6 +333,7 @@ DEFAULT_CFG = {
     "dpi_scale": False,
     "find_shake": True,
     "catalog_got": {},        # con trỏ đã tải từ kho trực tuyến: {id: tên file trong my_cursors}
+    "made_cursors": {},       # con trỏ tự tạo: {tên file trong my_cursors: thông số} để mở lại sửa
     "setup_done": False,      # đã qua màn hình thiết lập lần đầu
     "favorites": [],          # con trỏ yêu thích: mã hình, "bib:<tên>" hoặc "my:<tên file>"
     "profiles": [],      # hồ sơ riêng: [{"name": ..., "exes": [...], "style": {...}}]
@@ -551,6 +552,8 @@ def load_cfg():
     cfg["profiles"] = profiles
     cfg["dpi_scale"] = bool(cfg.get("dpi_scale"))
     cfg["find_shake"] = bool(cfg.get("find_shake", True))
+    made = cfg.get("made_cursors") if isinstance(cfg.get("made_cursors"), dict) else {}
+    cfg["made_cursors"] = {k: v for k, v in made.items() if isinstance(k, str) and isinstance(v, dict)}
     got = cfg.get("catalog_got") if isinstance(cfg.get("catalog_got"), dict) else {}
     cfg["catalog_got"] = {k: v for k, v in got.items() if isinstance(k, str) and isinstance(v, str)}
     favs = cfg.get("favorites") if isinstance(cfg.get("favorites"), list) else []
@@ -748,6 +751,21 @@ TR_EN = {
     "Hư không": "Void", "Cầu vồng": "Rainbow", "Tự chọn": "Custom", "Tự chọn màu ombre": "Custom ombre",
     "Màu 1 ở mũi con trỏ, màu cuối ở đuôi.": "Color 1 is at the cursor tip, the last color at the tail.",
     "Dùng 3 màu": "Use 3 colors", "Dùng dải màu này": "Use these colors", "Hủy": "Cancel",
+    "✦ Tạo con trỏ": "✦ Create cursor", "Tạo con trỏ": "Create cursor", "TẠO CON TRỎ": "CREATE A CURSOR",
+    "Chọn hình, chỉnh dáng, màu và viền. Con trỏ được lưu vào mục Của bạn.":
+        "Pick a shape, then tune its form, colors and outline. It's saved to Yours.",
+    "Bấm vào hình để đặt điểm click": "Click the image to set the click point",
+    "Điểm click tự động": "Auto click point", "KÍCH THƯỚC THẬT": "ACTUAL SIZE", "HÌNH DÁNG": "SHAPE",
+    "DÁNG": "FORM", "Độ rộng": "Width", "Độ dài đuôi": "Tail length", "Độ dày nét": "Thickness", "Bo góc": "Roundness",
+    "Xoay": "Rotation", "Khe hở": "Gap", "TÔ MÀU": "FILL", "Một màu": "Solid", "Kính mờ": "Glass", "VIỀN": "OUTLINE",
+    "Viền trong": "Inner outline", "Viền ngoài": "Outer outline", "CHI TIẾT": "DETAILS",
+    "Chấm sáng ở mũi": "Tip dot", "Vệt sáng": "Shine", "Bóng đổ": "Shadow", "Tên": "Name",
+    "Con trỏ của tôi": "My cursor", "Lưu vào Của bạn": "Save to Yours", "Không lưu được con trỏ:": "Couldn't save the cursor:",
+    "Sửa con trỏ này": "Edit this cursor",
+    "Nhọn": "Sharp", "Bo tròn": "Rounded", "Mảnh": "Slim", "Pha lê": "Shard", "Giọt nước": "Droplet",
+    "Tam giác": "Triangle", "Chấm": "Dot", "Vòng": "Ring",
+    "Chưa có con trỏ nào. Tự tạo một con trỏ, hoặc bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF hay file .cur, .ani.":
+        "No cursors yet. Create one, or click \"+ Add cursor\" to add a PNG, GIF, .cur or .ani file.",
     "Của bạn": "Yours", "Tô màu": "Tinted", "+ Thêm con trỏ": "+ Add cursor", "Xóa con trỏ này": "Delete this cursor",
     "Xóa con trỏ \"{n}\" khỏi bộ sưu tập?": "Remove the cursor \"{n}\" from your library?",
     "Chưa có con trỏ nào. Bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF hoặc file con trỏ .cur, .ani.":
@@ -970,6 +988,195 @@ def ombre_swatch(colors, size=32, round_=True):
     out = bar.convert("RGBA")
     out.putalpha(mask)
     return out.resize((w, h), Image.LANCZOS)
+
+
+# ---------------------------------------------------------------- Trình tạo con trỏ (2.2.0)
+MAKER_SHAPES = [   # (mã, tên, loại: "poly" có mũi / "center" điểm click ở giữa)
+    ("arrow", "Nhọn", "poly"), ("arrow_round", "Bo tròn", "poly"),
+    ("arrow_slim", "Mảnh", "poly"), ("shard", "Pha lê", "poly"), ("drop", "Giọt nước", "poly"),
+    ("triangle", "Tam giác", "poly"), ("diamond", "Kim cương", "center"), ("dot", "Chấm", "center"),
+    ("ring", "Vòng", "center"), ("cross", "Tâm ngắm", "center"),
+]
+MAKER_SHAPE_DEFAULTS = {   # thông số hợp lý khi đổi sang hình đó
+    "arrow": {"width": 1.0, "tail": 1.0, "round": 0.0}, "arrow_round": {"width": 1.0, "tail": 1.0, "round": 0.6},
+    "arrow_slim": {"width": 0.9, "tail": 1.0, "round": 0.0}, "shard": {"width": 1.0, "tail": 0.6, "round": 0.0},
+    "drop": {"width": 1.0, "tail": 0.6, "round": 0.0}, "triangle": {"width": 1.0, "tail": 0.5, "round": 0.2},
+    "diamond": {"width": 0.8, "round": 0.0}, "dot": {"width": 0.5}, "ring": {"width": 0.9, "thick": 0.25},
+    "cross": {"width": 1.0, "tail": 0.35, "thick": 0.35},
+}
+MAKER_DEFAULT = {"shape": "arrow", "width": 1.0, "tail": 1.0, "round": 0.0, "rot": 0, "thick": 0.5,
+                 "fill": "solid", "color": "#FF2E93", "ombre": ["#FF2E93", "#FF8A3D", "#FFD60A"],
+                 "in_col": "#FFFFFF", "in_w": 7, "out_col": "#0B0D12", "out_w": 4,
+                 "tip": True, "shine": True, "shadow": True, "hot": None}
+
+
+def _hull(pts):
+    pts = sorted(set(pts))
+    if len(pts) < 3:
+        return pts
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lo, up = [], []
+    for p in pts:
+        while len(lo) >= 2 and cross(lo[-2], lo[-1], p) <= 0:
+            lo.pop()
+        lo.append(p)
+    for p in reversed(pts):
+        while len(up) >= 2 and cross(up[-2], up[-1], p) <= 0:
+            up.pop()
+        up.append(p)
+    return lo[:-1] + up[:-1]
+
+
+def _maker_poly(sp):
+    """Đa giác (đơn vị, mũi ở gốc tọa độ) của các hình có mũi."""
+    w, t = sp["width"], sp["tail"]
+    sh = sp["shape"]
+    if sh in ("arrow", "arrow_round", "arrow_slim"):
+        if sh == "arrow_slim":
+            base = [(0, 0), (0.04, 0.92), (0.22, 0.70), (0.34, 1.02), (0.43, 0.98), (0.31, 0.66), (0.58, 0.66)]
+        else:
+            base = [(0, 0), (0, 0.86), (0.22, 0.66), (0.36, 0.98), (0.49, 0.93), (0.35, 0.62), (0.63, 0.62)]
+        notch_l, notch_r = base[2], base[5]
+        out = []
+        for i, (x, y) in enumerate(base):
+            if i in (3, 4):                      # đuôi: co giãn theo "Độ dài đuôi"
+                nx, ny = (notch_l if i == 3 else notch_r)
+                x, y = nx + (x - nx) * t, ny + (y - ny) * t
+            out.append((x * w, y))
+        return out, -15
+    if sh == "shard":   # cánh diều đối xứng theo trục, xoay -45° để mũi ở góc trên trái
+        return [(0, 0), (0.24 * w, 0.62), (0, 0.72 + 0.28 * t), (-0.24 * w, 0.62)], -45
+    if sh == "drop":
+        r = 0.30 * w
+        cy = 0.55 + 0.25 * t
+        pts = [(0, 0)] + [(r * math.cos(a / 32 * math.pi), cy + r * math.sin(a / 32 * math.pi)) for a in range(64)]
+        h = _hull(pts)
+        i = h.index((0, 0))
+        return h[i:] + h[:i], -45
+    if sh == "triangle":
+        return [(0, 0), (0.42 * w, 0.62 + 0.3 * t), (-0.42 * w, 0.62 + 0.3 * t)], -45
+    return [(0, 0)], 0
+
+
+def _rot(pts, deg):
+    a = math.radians(deg)
+    ca, sa = math.cos(a), math.sin(a)
+    return [(x * ca - y * sa, x * sa + y * ca) for x, y in pts]
+
+
+def maker_render(sp, size=256):
+    """Vẽ con trỏ theo thông số -> (ảnh RGBA size×size, điểm click)."""
+    sp = dict(MAKER_DEFAULT, **sp)
+    k = size / 256
+    pad = (sp["in_w"] + sp["out_w"]) * k + (10 if sp["shadow"] else 4) * k + 4 * k
+    SS = 4
+    W = size * SS
+    mask_hi = Image.new("L", (W, W), 0)
+    d = ImageDraw.Draw(mask_hi)
+    kind = dict((a, c) for a, _, c in MAKER_SHAPES).get(sp["shape"], "poly")
+    if kind == "poly":
+        pts, base_rot = _maker_poly(sp)
+        pts = _rot(pts, base_rot + sp["rot"])          # điểm đầu tiên luôn là mũi
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        span = max(max(xs) - min(xs), max(ys) - min(ys)) or 1
+        sc = (size - 2 * pad) / span
+        ox, oy = pad - min(xs) * sc, pad - min(ys) * sc
+        # căn giữa phần dư theo chiều ngắn
+        ox += ((size - 2 * pad) - (max(xs) - min(xs)) * sc) / 2 * 0.0
+        poly = [((x * sc + ox) * SS, (y * sc + oy) * SS) for x, y in pts]
+        d.polygon(poly, fill=255)
+        hot = (pts[0][0] * sc + ox, pts[0][1] * sc + oy)
+    else:
+        c = W / 2
+        R = (size / 2 - pad) * SS * min(1.0, 0.55 + 0.45 * sp["width"])
+        th = max(2 * SS * k, R * (0.08 + 0.30 * sp["thick"]))
+        if sp["shape"] == "dot":
+            d.ellipse([c - R * 0.7, c - R * 0.7, c + R * 0.7, c + R * 0.7], fill=255)
+        elif sp["shape"] == "ring":
+            d.ellipse([c - R, c - R, c + R, c + R], fill=255)
+            d.ellipse([c - R + th, c - R + th, c + R - th, c + R - th], fill=0)
+        elif sp["shape"] == "diamond":
+            rx = R * (0.55 + 0.45 * sp["width"]) / 1.0
+            pts = _rot([(0, -R), (rx * 0.8, 0), (0, R), (-rx * 0.8, 0)], sp["rot"])
+            d.polygon([(c + x, c + y) for x, y in pts], fill=255)
+        else:   # tâm ngắm: 4 thanh có khe hở
+            gap = R * (0.15 + 0.35 * sp["tail"])
+            h = th / 2
+            for ang in (0, 90, 180, 270):
+                bar = _rot([(gap, -h), (R, -h), (R, h), (gap, h)], ang + sp["rot"])
+                d.polygon([(c + x, c + y) for x, y in bar], fill=255)
+        hot = (size / 2, size / 2)
+    mask = mask_hi.resize((size, size), Image.LANCZOS)
+    if sp["round"] > 0:                                  # bo góc: làm mờ rồi cắt ngưỡng
+        r = 1 + sp["round"] * 10 * k
+        mask = mask.filter(ImageFilter.GaussianBlur(r)).point(lambda v: 0 if v < 118 else (255 if v > 138 else (v - 118) * 255 // 20))
+
+    def grow(m, w):
+        w = int(round(w * k))
+        if w <= 0:
+            return m
+        g = m.filter(ImageFilter.MaxFilter(2 * w + 1))
+        return g.filter(ImageFilter.GaussianBlur(0.6))
+
+    m_in = grow(mask, sp["in_w"])
+    m_out = grow(m_in, sp["out_w"])
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    if sp["shadow"]:
+        sh = m_out.filter(ImageFilter.GaussianBlur(5 * k))
+        layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        layer.putalpha(sh.point(lambda v: v * 110 // 255))
+        out.alpha_composite(layer, (int(3 * k), int(5 * k)))
+    for m, col in ((m_out, sp["out_col"]), (m_in, sp["in_col"])):
+        layer = Image.new("RGBA", (size, size), _rgb(col) + (0,))
+        layer.putalpha(m)
+        out.alpha_composite(layer)
+    # thân
+    if sp["fill"] == "ombre":
+        tm = ombre_tmap(Image.merge("RGBA", (mask, mask, mask, mask)), hot)
+        lut = ombre_lut(sp["ombre"])
+        body = Image.merge("RGB", [tm.point(ch) for ch in lut]).convert("RGBA")
+        body.putalpha(mask)
+    else:
+        body = Image.new("RGBA", (size, size), _rgb(sp["color"]) + (0,))
+        if sp["fill"] == "glass":
+            body.putalpha(mask.point(lambda v: v * 150 // 255))
+        else:
+            body.putalpha(mask)
+    if sp["fill"] == "glass":   # lõi trong suốt: xóa phần viền trong phía sau để thấy nền
+        inner = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        out = Image.composite(inner, out, mask)
+    out.alpha_composite(body)
+    if sp["shine"]:            # vệt sáng dọc cạnh trên trái
+        sh_off = ImageChops.offset(mask, int(6 * k), int(6 * k))
+        shine = ImageChops.subtract(mask, sh_off).filter(ImageFilter.GaussianBlur(1.2 * k))
+        shine = ImageChops.multiply(shine, mask.filter(ImageFilter.MinFilter(3)))
+        layer = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+        layer.putalpha(shine.point(lambda v: v * 150 // 255))
+        out.alpha_composite(layer)
+    if sp["tip"]:
+        hx, hy = hot
+        r = 7 * k
+        tip_col = sp["ombre"][0] if sp["fill"] == "ombre" else sp["color"]
+        layer = Image.new("RGBA", (size * SS, size * SS), (0, 0, 0, 0))
+        dd = ImageDraw.Draw(layer)
+        dd.ellipse([(hx - r - 2.5 * k) * SS, (hy - r - 2.5 * k) * SS, (hx + r + 2.5 * k) * SS, (hy + r + 2.5 * k) * SS],
+                   fill="#FFFFFF")
+        dd.ellipse([(hx - r) * SS, (hy - r) * SS, (hx + r) * SS, (hy + r) * SS], fill=mix(tip_col, "#FFFFFF", 0.25))
+        out.alpha_composite(layer.resize((size, size), Image.LANCZOS))
+    if sp.get("hot"):
+        hot = tuple(sp["hot"])
+    return out, (int(round(hot[0])), int(round(hot[1])))
+
+
+def png_to_cur(im, hot):
+    """File .cur một ảnh, dữ liệu ảnh là PNG (Windows Vista trở lên đọc được)."""
+    buf = io.BytesIO()
+    im.save(buf, "PNG", optimize=True)
+    png = buf.getvalue()
+    w, h = im.size
+    return struct.pack("<HHH", 0, 2, 1) + struct.pack("<BBBBHHII", w % 256, h % 256, 0, 0, hot[0], hot[1],
+                                                       len(png), 22) + png
 
 
 # ---------------------------------------------------------------- Phím tắt tùy chỉnh
@@ -2661,6 +2868,10 @@ class App:
                               command=lambda k=key: self.set_mine_tint(k == "tint"))
             b.pack(side="left", padx=(0, 8))
             self.mine_theme_buttons[key] = b
+        self.mine_edit = ctk.CTkButton(head, text=T("Sửa con trỏ này"), command=self.edit_made_cursor, height=36,
+                                       corner_radius=10, border_width=1, border_color=ACCENT,
+                                       fg_color=mix(CARD, ACCENT, 0.10), hover_color=mix(CARD, ACCENT, 0.22),
+                                       text_color="#FFFFFF", font=self.F.b(12, strong=True))
         self.mine_del = ctk.CTkButton(head, text=T("Xóa con trỏ này"), command=self.delete_my_cursor, height=36,
                                       corner_radius=10, border_width=1, border_color="#FF5A5A",
                                       fg_color=mix(CARD, "#FF5A5A", 0.10), hover_color=mix(CARD, "#FF5A5A", 0.22),
@@ -2787,14 +2998,21 @@ class App:
         self.mine_tiles = {}
         self.star_btns = {k: v for k, v in getattr(self, "star_btns", {}).items() if not k.startswith("my:")}
         cols = 5
+        make = ctk.CTkButton(grid, text=T("✦ Tạo con trỏ"), compound="top", height=94, width=10, corner_radius=12,
+                             border_width=1, border_color=mix(BORDER, ACCENT, 0.6), fg_color=mix(CARD, ACCENT, 0.08),
+                             hover_color=mix(CARD, ACCENT, 0.18), text_color="#FFFFFF", font=self.F.b(12, strong=True),
+                             image=ctk.CTkImage(maker_render({"fill": "ombre", "in_w": 9, "out_w": 0, "shadow": False},
+                                                             64)[0], size=(32, 32)),
+                             command=self.open_maker)
+        make.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
         add = ctk.CTkButton(grid, text=T("+ Thêm con trỏ"), compound="top", height=94, width=10, corner_radius=12,
                             border_width=1, border_color=mix(BORDER, CYAN, 0.5), fg_color=mix(CARD, CYAN, 0.06),
                             hover_color=mix(CARD, CYAN, 0.16), text_color=CYAN_TEXT, font=self.F.b(12, strong=True),
                             image=ctk.CTkImage(simple_icon("upload", CYAN_TEXT, 64), size=(30, 30)),
                             command=self.upload_image)
-        add.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
+        add.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
         files = my_cursor_files()
-        for i, f in enumerate(files, start=1):
+        for i, f in enumerate(files, start=2):
             try:
                 frames, _hot, _steps = load_cursor_file(str(f))
                 th = frames[0].copy()
@@ -2811,10 +3029,319 @@ class App:
             self.mine_tiles[str(f)] = b
             self.add_star(b, "my:" + f.name)
         if not files:
-            ctk.CTkLabel(grid, text=T("Chưa có con trỏ nào. Bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF "
-                                      "hoặc file con trỏ .cur, .ani."), font=self.F.b(12), text_color=TEXT2,
-                         wraplength=480, justify="left").grid(row=0, column=1, columnspan=4, sticky="w", padx=12)
+            ctk.CTkLabel(grid, text=T("Chưa có con trỏ nào. Tự tạo một con trỏ, hoặc bấm \"+ Thêm con trỏ\" "
+                                      "để thêm ảnh PNG, GIF hay file .cur, .ani."), font=self.F.b(12), text_color=TEXT2,
+                         wraplength=360, justify="left").grid(row=0, column=2, columnspan=3, sticky="w", padx=12)
         self.update_library()
+
+    # ------------------------------------------------------------ Trình tạo con trỏ
+    def edit_made_cursor(self):
+        img = self.cfg["image"]
+        if self.cfg["shape"] == "Ảnh tải lên" and img:
+            spec = self.cfg["made_cursors"].get(Path(img).name)
+            if spec:
+                self.open_maker(spec, Path(img))
+
+    def open_maker(self, spec=None, path=None):
+        if getattr(self, "maker_win", None) is not None:
+            try:
+                self.maker_win.lift()
+                return
+            except tk.TclError:
+                pass
+        sp = dict(MAKER_DEFAULT, **(spec or {}))
+        sp["ombre"] = list(sp["ombre"])
+        d = ctk.CTkToplevel(self.ov, fg_color=BG)
+        self.maker_win = d
+        d.title(T("Tạo con trỏ"))
+        d.resizable(False, False)
+        d.transient(self.win)
+        state = {"job": None, "img": None, "hot": (0, 0)}
+        PV = 300
+
+        outer = ctk.CTkFrame(d, fg_color="transparent")
+        outer.pack(fill="both", expand=True, padx=20, pady=16)
+        ctk.CTkLabel(outer, text=T("TẠO CON TRỎ"), font=self.F.h(22), text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(outer, text=T("Chọn hình, chỉnh dáng, màu và viền. Con trỏ được lưu vào mục Của bạn."),
+                     font=self.F.b(13), text_color=TEXT2).pack(anchor="w", pady=(0, 12))
+        body = ctk.CTkFrame(outer, fg_color="transparent")
+        body.pack(fill="both", expand=True)
+
+        # --- bên trái: xem trước
+        left = self.card(body)
+        left.pack(side="left", fill="y", padx=(0, 14))
+        cv = tk.Canvas(left, width=PV, height=PV, bg=FIELD, highlightthickness=1, highlightbackground=BORDER,
+                       bd=0, cursor="crosshair")
+        cv.pack(padx=14, pady=(14, 6))
+        for i in range(0, PV, 20):
+            cv.create_line(i, 0, i, PV, fill="#151A24")
+            cv.create_line(0, i, PV, i, fill="#151A24")
+        img_id = cv.create_image(PV // 2, PV // 2)
+        hot_ids = [cv.create_line(0, 0, 0, 0, fill=CYAN, width=1) for _ in range(2)]
+        ctk.CTkLabel(left, text=T("Bấm vào hình để đặt điểm click"), font=self.F.b(12),
+                     text_color=MUTED).pack()
+        ctk.CTkButton(left, text=T("Điểm click tự động"), height=28, width=10, corner_radius=8, border_width=1,
+                      border_color=BORDER, fg_color="transparent", hover_color="#1A1E29", text_color=TEXT2,
+                      font=self.F.b(12), command=lambda: (sp.update(hot=None), redraw())).pack(pady=(4, 8))
+        small = tk.Canvas(left, width=PV, height=86, bg=CARD, highlightthickness=0, bd=0)
+        small.pack(padx=14, pady=(0, 14))
+        small.create_rectangle(PV // 2, 4, PV - 2, 84, fill="#C9BFA8", outline="")
+        small.create_rectangle(2, 4, PV // 2, 84, fill="#10141C", outline="")
+        small_ids = [small.create_image(x, 44) for x in (40, 105, 190, 255)]
+        self.caps(left, "KÍCH THƯỚC THẬT").place(x=16, y=PV + 74)
+
+        # --- bên phải: tùy chọn
+        right = ctk.CTkScrollableFrame(body, fg_color=CARD, border_color=BORDER, border_width=1, corner_radius=14,
+                                       width=470, height=PV + 150, scrollbar_button_color=BORDER,
+                                       scrollbar_button_hover_color="#3A4152")
+        right.pack(side="left", fill="both", expand=True)
+        pad = dict(padx=14)
+
+        self.caps(right, "HÌNH DÁNG").pack(anchor="w", pady=(12, 6), **pad)
+        sg = ctk.CTkFrame(right, fg_color="transparent")
+        sg.pack(fill="x", **pad)
+        for i in range(5):
+            sg.grid_columnconfigure(i, weight=1, uniform="m")
+        shape_btns = {}
+        for i, (key, name, _kind) in enumerate(MAKER_SHAPES):
+            th = maker_render(dict(MAKER_SHAPE_DEFAULTS[key], shape=key, color="#C9CFDC", in_w=0, out_w=0,
+                                   shadow=False, shine=False, tip=False), 72)[0]
+            b = ctk.CTkButton(sg, text=T(name), compound="top", height=70, width=10, corner_radius=10,
+                              border_width=1, font=self.F.b(11), image=ctk.CTkImage(th, size=(32, 32)),
+                              command=lambda k=key: set_shape(k))
+            b.grid(row=i // 5, column=i % 5, sticky="ew", padx=3, pady=3)
+            shape_btns[key] = b
+
+        def slider(label, key, lo, hi, steps):
+            row = ctk.CTkFrame(right, fg_color="transparent")
+            lab = ctk.CTkLabel(row, text=T(label), font=self.F.b(13), text_color=TEXT, width=110, anchor="w")
+            lab.pack(side="left")
+            sl = ctk.CTkSlider(row, from_=lo, to=hi, number_of_steps=steps, progress_color=ACCENT,
+                               button_color=ACCENT, button_hover_color=mix(ACCENT, "#FFFFFF", 0.25),
+                               fg_color="#1A1E29", height=16, command=lambda v, k=key: (sp.update({k: v}), redraw()))
+            sl.pack(side="left", fill="x", expand=True)
+            sl.set(sp[key])
+            return row, lab, sl
+
+        self.caps(right, "DÁNG").pack(anchor="w", pady=(14, 4), **pad)
+        sliders = {
+            "width": slider("Độ rộng", "width", 0.4, 1.6, 60),
+            "tail": slider("Độ dài đuôi", "tail", 0.0, 1.0, 50),
+            "thick": slider("Độ dày nét", "thick", 0.0, 1.0, 50),
+            "round": slider("Bo góc", "round", 0.0, 1.0, 50),
+            "rot": slider("Xoay", "rot", -60, 60, 120),
+        }
+
+        self.caps(right, "TÔ MÀU").pack(anchor="w", pady=(14, 6), **pad)
+        fill_map = {T("Một màu"): "solid", "Ombre": "ombre", T("Kính mờ"): "glass"}
+        fill_seg = ctk.CTkSegmentedButton(right, values=list(fill_map), height=32, font=self.F.b(12, strong=True),
+                                          fg_color=FIELD, unselected_color=FIELD, unselected_hover_color="#1A1E29",
+                                          selected_color=mix(CARD, ACCENT, 0.35),
+                                          selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT,
+                                          command=lambda v: (sp.update(fill=fill_map[v]), redraw()))
+        fill_seg.pack(anchor="w", **pad)
+        fill_seg.set({v: k for k, v in fill_map.items()}[sp["fill"]])
+        color_row = ctk.CTkFrame(right, fg_color="transparent")
+        color_row.pack(fill="x", pady=(8, 0), **pad)
+        sw_btns = {}
+        for c, _n in SWATCHES:
+            b = ctk.CTkButton(color_row, text="", width=28, height=28, corner_radius=14, fg_color=c,
+                              hover_color=mix(c, "#FFFFFF", 0.2), border_width=0,
+                              command=lambda c=c: (sp.update(color=c), redraw()))
+            b.pack(side="left", padx=(0, 6))
+            sw_btns[c] = b
+
+        def pick_main():
+            res = colorchooser.askcolor(color=sp["color"], parent=d, title=T("Chọn màu"))
+            if res and res[1]:
+                sp["color"] = res[1].upper()
+                redraw()
+
+        ctk.CTkButton(color_row, text="", width=28, height=28, corner_radius=14, fg_color="transparent",
+                      hover_color="#1A1E29", border_width=1, border_color="#4A5266",
+                      image=ctk.CTkImage(simple_icon("plus", TEXT2, 32), size=(12, 12)),
+                      command=pick_main).pack(side="left")
+        ombre_row = ctk.CTkFrame(right, fg_color="transparent")
+        ombre_row.pack(fill="x", pady=(8, 0), **pad)
+        ombre_lbls = {}
+        for key, _n, cols in OMBRE_PRESETS:
+            lb = ctk.CTkLabel(ombre_row, text="", width=28, height=28, cursor="hand2",
+                              image=ctk.CTkImage(ombre_dot(cols, False), size=(28, 28)))
+            lb.bind("<Button-1>", lambda e, cl=cols: (sp.update(ombre=list(cl), fill="ombre"), redraw()))
+            lb.pack(side="left", padx=(0, 6))
+            ombre_lbls[key] = lb
+
+        self.caps(right, "VIỀN").pack(anchor="w", pady=(14, 4), **pad)
+        edge_btns = {}
+
+        def edge_row(label, ckey, wkey):
+            row = ctk.CTkFrame(right, fg_color="transparent")
+            row.pack(fill="x", pady=3, **pad)
+            ctk.CTkLabel(row, text=T(label), font=self.F.b(13), text_color=TEXT, width=110,
+                         anchor="w").pack(side="left")
+
+            def pick():
+                res = colorchooser.askcolor(color=sp[ckey], parent=d, title=T("Chọn màu"))
+                if res and res[1]:
+                    sp[ckey] = res[1].upper()
+                    redraw()
+
+            b = ctk.CTkButton(row, text="", width=28, height=28, corner_radius=14, border_width=2,
+                              border_color="#4A5266", command=pick)
+            b.pack(side="left", padx=(0, 10))
+            edge_btns[ckey] = b
+            sl = ctk.CTkSlider(row, from_=0, to=14, number_of_steps=14, progress_color=ACCENT, button_color=ACCENT,
+                               button_hover_color=mix(ACCENT, "#FFFFFF", 0.25), fg_color="#1A1E29", height=16,
+                               command=lambda v: (sp.update({wkey: int(v)}), redraw()))
+            sl.pack(side="left", fill="x", expand=True)
+            sl.set(sp[wkey])
+
+        edge_row("Viền trong", "in_col", "in_w")
+        edge_row("Viền ngoài", "out_col", "out_w")
+
+        self.caps(right, "CHI TIẾT").pack(anchor="w", pady=(14, 4), **pad)
+        det = ctk.CTkFrame(right, fg_color="transparent")
+        det.pack(fill="x", pady=(0, 14), **pad)
+        for key, label in (("tip", "Chấm sáng ở mũi"), ("shine", "Vệt sáng"), ("shadow", "Bóng đổ")):
+            var = tk.BooleanVar(value=sp[key])
+            ctk.CTkCheckBox(det, text=T(label), variable=var, font=self.F.b(13), text_color=TEXT, checkbox_width=20,
+                            checkbox_height=20, corner_radius=6, border_width=1, fg_color=ACCENT, hover_color=ACCENT,
+                            border_color="#4A5266", checkmark_color="#FFFFFF",
+                            command=lambda k=key, v=var: (sp.update({k: bool(v.get())}), redraw())
+                            ).pack(side="left", padx=(0, 16))
+
+        # --- dưới cùng: tên + lưu
+        foot = ctk.CTkFrame(outer, fg_color="transparent")
+        foot.pack(fill="x", pady=(14, 0))
+        ctk.CTkLabel(foot, text=T("Tên"), font=self.F.b(13), text_color=TEXT2).pack(side="left", padx=(0, 8))
+        name_var = tk.StringVar(value=path.stem if path else T("Con trỏ của tôi"))
+        ctk.CTkEntry(foot, textvariable=name_var, width=240, height=38, corner_radius=10, border_color=BORDER,
+                     fg_color=FIELD, text_color=TEXT, font=self.F.b(13)).pack(side="left")
+
+        def close():
+            self.maker_win = None
+            try:
+                d.destroy()
+            except tk.TclError:
+                pass
+
+        def save():
+            im, hot = maker_render(sp)
+            data = png_to_cur(im, hot)
+            try:
+                MY_DIR.mkdir(parents=True, exist_ok=True)
+                name = name_var.get().strip() or T("Con trỏ của tôi")
+                dest = path if path is not None and Path(path).exists() else unique_my_path(name + ".cur")
+                Path(dest).write_bytes(data)
+            except OSError as e:
+                messagebox.showerror(T("Lỗi"), T("Không lưu được con trỏ:") + f"\n{e}", parent=d)
+                return
+            keep = {k: sp[k] for k in MAKER_DEFAULT}
+            self.cfg["made_cursors"] = dict(self.cfg["made_cursors"], **{Path(dest).name: keep})
+            self.img_cache.clear()
+            close()
+            self.rebuild_mine_tiles()
+            self.cfg["tint_image"] = False          # con trỏ tự tạo giữ đúng màu đã chọn
+            self.cfg["ombre"] = False
+            try:
+                self.tint_var.set(False)
+            except AttributeError:
+                pass
+            self.use_my_cursor(dest)
+            self.save()
+
+        ctk.CTkButton(foot, text=T("Lưu vào Của bạn"), command=save, height=42, width=170, corner_radius=10,
+                      fg_color=ACCENT, hover_color=mix(ACCENT, "#FFFFFF", 0.15), text_color="#FFFFFF",
+                      font=self.F.h(14)).pack(side="right")
+        ctk.CTkButton(foot, text=T("Hủy"), command=close, width=90, height=42, corner_radius=10,
+                      fg_color="transparent", hover_color="#1A1E29", text_color=TEXT2,
+                      font=self.F.b(13)).pack(side="right", padx=(0, 8))
+
+        # --- vẽ lại
+        def set_shape(key):
+            sp.update(MAKER_SHAPE_DEFAULTS[key], shape=key, hot=None)
+            for k, (_row, _lab, sl) in sliders.items():
+                sl.set(sp[k])
+            redraw()
+
+        def render_now():
+            state["job"] = None
+            try:
+                im, hot = maker_render(sp)
+            except Exception:
+                self.report_error("maker", once=True)
+                return
+            state["img"], state["hot"] = im, hot
+            S = 240
+            ph = ImageTk.PhotoImage(im.resize((S, S), Image.LANCZOS), master=self.ov)
+            cv.itemconfig(img_id, image=ph)
+            cv._ph = ph
+            off = (PV - S) // 2
+            hx, hy = off + hot[0] * S / 256, off + hot[1] * S / 256
+            cv.coords(hot_ids[0], hx - 9, hy, hx + 10, hy)
+            cv.coords(hot_ids[1], hx, hy - 9, hx, hy + 10)
+            phs = []
+            for idx, size in enumerate((32, 48, 32, 48)):
+                p2 = ImageTk.PhotoImage(im.resize((size, size), Image.LANCZOS), master=self.ov)
+                small.itemconfig(small_ids[idx], image=p2)
+                phs.append(p2)
+            small._ph = phs
+            # trạng thái các nút
+            kind = dict((a, c) for a, _, c in MAKER_SHAPES)[sp["shape"]]
+            for k, b in shape_btns.items():
+                on = k == sp["shape"]
+                b.configure(fg_color=mix(CARD, ACCENT, 0.16) if on else FIELD, border_color=ACCENT if on else BORDER,
+                            hover_color=mix(CARD, ACCENT, 0.24) if on else "#161A23",
+                            text_color="#FFFFFF" if on else TEXT2)
+            show = {"width": True, "rot": sp["shape"] not in ("dot", "ring"),
+                    "tail": kind == "poly" or sp["shape"] == "cross",
+                    "thick": sp["shape"] in ("ring", "cross"), "round": kind == "poly"}
+            want = [k for k in sliders if show[k]]
+            if want != state.get("rows"):
+                state["rows"] = want
+                for k, (row, _lab, _sl) in sliders.items():
+                    row.pack_forget()
+                for k in want:
+                    sliders[k][0].pack(fill="x", pady=3, padx=14, before=sliders_anchor)
+            sliders["tail"][1].configure(text=T("Khe hở") if sp["shape"] == "cross" else T("Độ dài đuôi"))
+            for c, b in sw_btns.items():
+                on = sp["fill"] != "ombre" and c.lower() == sp["color"].lower()
+                b.configure(border_width=3 if on else 0, border_color="#FFFFFF")
+            cur = [x.lower() for x in sp["ombre"]]
+            for key, _n, cols in OMBRE_PRESETS:
+                on = sp["fill"] == "ombre" and [x.lower() for x in cols] == cur
+                ombre_lbls[key].configure(image=ctk.CTkImage(ombre_dot(cols, on), size=(28, 28)))
+            for ckey, b in edge_btns.items():
+                b.configure(fg_color=sp[ckey], hover_color=sp[ckey])
+            fill_seg.set({v: k for k, v in fill_map.items()}[sp["fill"]])
+
+        def redraw():
+            if state["job"] is None:
+                state["job"] = d.after(40, render_now)
+
+        def on_click(e):
+            S = 240
+            off = (PV - S) // 2
+            x, y = (e.x - off) * 256 / S, (e.y - off) * 256 / S
+            if 0 <= x < 256 and 0 <= y < 256:
+                sp["hot"] = [int(x), int(y)]
+                redraw()
+
+        cv.bind("<Button-1>", on_click)
+        # các hàng thanh trượt nằm trước nhãn TÔ MÀU
+        sliders_anchor = [w for w in right.winfo_children() if isinstance(w, ctk.CTkLabel)
+                          and w.cget("text") == T("TÔ MÀU")][0]
+        d.protocol("WM_DELETE_WINDOW", close)
+        render_now()
+        try:
+            d.update_idletasks()
+            x = self.win.winfo_rootx() + (self.win.winfo_width() - d.winfo_width()) // 2
+            y = self.win.winfo_rooty() + (self.win.winfo_height() - d.winfo_height()) // 4
+            d.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except tk.TclError:
+            pass
+        d.after(100, d.lift)
+        d.after(150, d.focus_force)
 
     # ------------------------------------------------------------ Kho con trỏ trực tuyến
     def cat_file(self, cid):
@@ -3023,8 +3550,10 @@ class App:
             self.bib_link.pack_forget()
         if v == "mine":
             self.mine_del.pack(side="right")
+            self.mine_edit.pack(side="right", padx=(0, 8))
         else:
             self.mine_del.pack_forget()
+            self.mine_edit.pack_forget()
         if v == "online":
             self.sw_caps.pack_forget()
             self.sw_row.pack_forget()
@@ -3208,6 +3737,8 @@ class App:
                 pass
         if getattr(self, "mine_del", None):
             self.mine_del.configure(state="normal" if mine_sel and mine_sel in self.mine_tiles else "disabled")
+            made = mine_sel and mine_sel in self.mine_tiles and Path(mine_sel).name in c["made_cursors"]
+            self.mine_edit.configure(state="normal" if made else "disabled")
         custom_on = {"ez": c["own_theme"] == "custom", "bibata": c["bibata_theme"] == "custom",
                      "mine": bool(c["tint_image"])}.get(view, False) and not c["ombre"]
         known = set()
@@ -4692,6 +5223,7 @@ class App:
         except OSError:
             pass
         self.cfg["favorites"] = [f for f in self.cfg["favorites"] if f != "my:" + Path(img).name]
+        self.cfg["made_cursors"] = {k: v for k, v in self.cfg["made_cursors"].items() if k != Path(img).name}
         for st in [self.cfg.base] + [pr["style"] for pr in self.cfg["profiles"]]:
             if st.get("image") == img:
                 st["image"] = ""
