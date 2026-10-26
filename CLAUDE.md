@@ -11,7 +11,9 @@ App Windows vẽ con trỏ chuột tùy biến (lớp phủ) cho game ARPG (Diab
 - Cài thư viện (lần đầu): `py -3.13 -m pip install pillow pystray customtkinter pytest`
 - Chạy app: thoát EzCursor đang chạy trước (Ctrl+Alt+Q, app chỉ cho 1 bản) rồi `py -3.13 ezcursor.py`
 - Màn hình thiết lập lần đầu: `py -3.13 ezcursor.py --setup`
-- Kiểm thử: CHỈ chạy trên CI Linux (.github/workflows/tests.yml, mỗi lần push) hoặc `xvfb-run -a python -m pytest tests` trên Linux. KHÔNG chạy pytest trên Windows thật cho đến khi tests/stubs.py luôn đặt APPDATA về thư mục tạm — fixture `app` trong tests/test_ui.py gọi `shutil.rmtree` lên `%APPDATA%\EzCursor` và đã từng xoá dữ liệu thật.
+- Kiểm thử: Windows `py -3.13 -m pytest tests` (~2 phút); Linux `xvfb-run -a python -m pytest tests`; CI Linux chạy mỗi lần push (.github/workflows/tests.yml).
+  - tests/stubs.py luôn đặt APPDATA về thư mục tạm mới (`tempfile.mkdtemp`); fixture `app` (tests/test_ui.py) assert đường dẫn nằm trong thư mục tạm đó trước khi `shutil.rmtree`. KHÔNG bỏ hai chốt này — trước đây test đã từng xoá `%APPDATA%\EzCursor` thật.
+  - Sửa stubs: windll/winreg giả lập phải trả số thật (customtkinter/darkdetect dùng trên Windows); file mở trong test phải đóng ở teardown (Windows khoá file đang mở).
 - Không bao giờ xoá/ghi đè `%APPDATA%\EzCursor` (config.json, my_cursors/) của người dùng. Trước khi chạy lệnh có thể đụng vào thư mục này, sao lưu nó trước.
 - Log lỗi: `%APPDATA%\EzCursor\ezcursor.log`
 
