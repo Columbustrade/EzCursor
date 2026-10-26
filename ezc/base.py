@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 APP_NAME = "EzCursor"
-APP_VERSION = "2.2.1"
+APP_VERSION = "2.2.2"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
 GITHUB_REPO = "ezcursor/EzCursor"

@@ -1,7 +1,7 @@
 ﻿; Bộ cài đặt EzCursor - biên dịch bằng Inno Setup 6 (build_installer.bat làm tự động)
 
 #define MyAppName "EzCursor"
-#define MyAppVersion "2.2.1"
+#define MyAppVersion "2.2.2"
 #define MyAppPublisher "EzCursor"
 #define MyAppExeName "EzCursor.exe"
 
