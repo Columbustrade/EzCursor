@@ -109,6 +109,11 @@ class RenderMixin:
             hit = cache[key] = {"composed": self.composed, "variants": self.variants}
             while len(cache) > 6:
                 cache.popitem(last=False)
+        # Chỉ giữ khung hình động (nặng RAM) của 2 kiểu dùng gần nhất, vd game đang chơi và desktop.
+        # Kiểu cũ hơn chỉ giữ ảnh tĩnh; khi quay lại, khung hình được dựng lại từng phần nên không khựng.
+        for old in list(cache.values())[:-2]:
+            for k in ("frame_sets", "durations", "photos", "ov_hot"):
+                old.pop(k, None)
         im, self.ov_hot, _ = self.composed
         if getattr(self, "sys_cache", None) is not None:
             self.drop_system_cache()

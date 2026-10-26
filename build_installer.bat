@@ -23,7 +23,8 @@ if errorlevel 1 goto loi
 
 echo.
 echo === [2/3] Dong goi EzCursor.exe ===
-%PY% -m PyInstaller --noconfirm --onedir --noconsole --hidden-import pystray._win32 --collect-all customtkinter --add-data "fonts;fonts" --add-data "bibata;bibata" --add-data "assets;assets" --add-data "ezcursor.ico;." --add-data "logo.png;." --icon ezcursor.ico --name EzCursor ezcursor.py
+rem Bo cac thu vien EzCursor khong dung (anh AVIF, quan ly mau, nen zstd/lzma/bz2, XML) cho bo cai nhe hon
+%PY% -m PyInstaller --noconfirm --clean --onedir --noconsole --hidden-import pystray._win32 --collect-all customtkinter --add-data "fonts;fonts" --add-data "bibata;bibata" --add-data "assets;assets" --add-data "ezcursor.ico;." --add-data "logo.png;." --exclude-module PIL.AvifImagePlugin --exclude-module PIL._avif --exclude-module PIL.ImageCms --exclude-module PIL._imagingcms --exclude-module compression.zstd --exclude-module _zstd --exclude-module lzma --exclude-module _lzma --exclude-module bz2 --exclude-module _bz2 --exclude-module xml --exclude-module pyexpat --exclude-module pydoc --icon ezcursor.ico --name EzCursor ezcursor.py
 if errorlevel 1 goto loi
 
 echo.
