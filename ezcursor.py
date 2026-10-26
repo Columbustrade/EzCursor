@@ -4861,6 +4861,7 @@ class App:
         if getattr(self, "_cf_job", None):
             self.ov.after_cancel(self._cf_job)
             self._cf_job = None
+        self._builder = None
         if hit.get("frame_sets"):            # khung hình đã dựng trước đó: dùng lại ngay
             self.frame_sets = hit["frame_sets"]
             self.cursor_durations = hit["durations"]
@@ -4886,24 +4887,57 @@ class App:
     def ombre_moving(self):
         return self.cfg["ombre"] and self.cfg["ombre_anim"] and not self.animated_image()
 
-    def build_image_frames(self):
-        """Khung hình cho ảnh động (.ani / .gif), mỗi khung giữ đúng thời gian của file gốc."""
+    # ------------------------------------------------------------ Dựng khung hình từng phần
+    def run_builder(self, gen):
+        """Chạy việc dựng khung hình theo từng lượt ngắn, xen giữa là vòng bám chuột."""
+        self._builder = gen
+        self.step_builder()
+
+    def step_builder(self):
         self._cf_job = None
+        gen = getattr(self, "_builder", None)
+        if gen is None:
+            return
+        t0 = time.perf_counter()
+        try:
+            while time.perf_counter() - t0 < 0.006:
+                next(gen)
+        except StopIteration:
+            self._builder = None
+            return
+        except Exception:
+            self._builder = None
+            self.report_error("build frames", once=True)
+            return
+        self._cf_job = self.ov.after(1, self.step_builder)
+
+    def build_image_frames(self):
+        self._cf_job = None
+        self.run_builder(self.gen_image_frames())
+
+    def build_cursor_frames(self):
+        self._cf_job = None
+        self.run_builder(self.gen_cursor_frames())
+
+    def gen_image_frames(self):
+        """Khung hình cho ảnh động (.ani / .gif), mỗi khung giữ đúng thời gian của file gốc."""
         if not self.animated_image():
             return
         keep = self.src_img
-        sets, durs = {}, [ms for _, ms in self.src_steps]
-        try:
-            for key, col in self.hold_colors().items():
-                cache, frames = {}, []
-                for idx, _ms in self.src_steps:
-                    if idx not in cache:
-                        self.src_img = self.src_frames[idx]
+        src_frames, steps = self.src_frames, self.src_steps
+        sets, durs = {}, [ms for _, ms in steps]
+        for key, col in self.hold_colors().items():
+            cache, frames = {}, []
+            for idx, _ms in steps:
+                if idx not in cache:
+                    self.src_img = src_frames[idx]
+                    try:
                         cache[idx] = self.compose_cursor(col)[0]
-                    frames.append(cache[idx])
-                sets[key] = frames
-        finally:
-            self.src_img = keep
+                    finally:
+                        self.src_img = keep
+                    yield
+                frames.append(cache[idx])
+            sets[key] = frames
         frames = sets.get(None)
         if not frames or len({f.size for fs in sets.values() for f in fs}) != 1:
             return
@@ -4918,19 +4952,28 @@ class App:
         self.preview_photos = [photos.setdefault(id(fr), ImageTk.PhotoImage(fr, master=self.ov)) for fr in frames]
         self.remember_frames()
 
-    def build_cursor_frames(self):
-        """24 khung hình: ngôi sao nhấp nháy quanh con trỏ và/hoặc dải màu ombre chạy."""
-        self._cf_job = None
+    def gen_cursor_frames(self):
+        """24 khung hình: ngôi sao nhấp nháy quanh con trỏ và/hoặc dải màu ombre chạy (dựng từng khung)."""
         if not self.composed:
             return
         sets, pad = {}, 0
         moving = self.ombre_moving()
         cols = self.hold_colors()
-        for key, comp in self.variants.items():
-            ims = ([comp[0]] + [self.compose_cursor(cols.get(key), i / OMBRE_FRAMES)[0]
-                                for i in range(1, OMBRE_FRAMES)]) if moving else None
+        for key, comp in list(self.variants.items()):
+            ims = None
+            if moving:
+                ims = [comp[0]]
+                for i in range(1, OMBRE_FRAMES):
+                    ims.append(self.compose_cursor(cols.get(key), i / OMBRE_FRAMES)[0])
+                    yield
             if self.cfg["cursor_sparkle"]:
-                sets[key], pad = self.sparkle_frames(comp, ims)
+                ctx = self.sparkle_setup(comp)
+                pad = ctx["pad"]
+                frames = []
+                for i in range(24):
+                    frames.append(self.sparkle_frame(ctx, i, ims[i] if ims else comp[0]))
+                    yield
+                sets[key] = frames
             else:
                 sets[key] = ims
         hot = self.composed[1]
@@ -4948,8 +4991,11 @@ class App:
         self.remember_frames()
 
     def sparkle_frames(self, composed, ims=None):
-        """24 khung hình có ngôi sao nhấp nháy quanh con trỏ; trả về (khung hình, phần lề thêm).
-        ims: ảnh con trỏ riêng cho từng khung (ombre chuyển động)."""
+        """24 khung hình có ngôi sao nhấp nháy quanh con trỏ; trả về (khung hình, phần lề thêm)."""
+        ctx = self.sparkle_setup(composed)
+        return [self.sparkle_frame(ctx, i, ims[i] if ims else composed[0]) for i in range(24)], ctx["pad"]
+
+    def sparkle_setup(self, composed):
         im, hot, gcol = composed
         s = self.eff_size()
         bb = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox() or (0, 0, im.width, im.height)
@@ -4962,12 +5008,14 @@ class App:
             (x1 + 0.06 * bw, y0 + 0.42 * bh, s * 0.075, "#2EE59D", 0.48),
             (x0 + 0.02 * bw, y1 - 0.02 * bh, s * 0.065, gcol, 0.78),
         ]
-        frames = []
-        N = 24
-        for i in range(N):
-            t = i / N
+        return {"W": W, "H": H, "pad": pad, "spots": spots}
+
+    def sparkle_frame(self, ctx, i, base):
+        W, H, pad, spots = ctx["W"], ctx["H"], ctx["pad"], ctx["spots"]
+        if True:
+            t = i / 24
             fr = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-            fr.alpha_composite(ims[i] if ims else im, (pad, pad))
+            fr.alpha_composite(base, (pad, pad))
             for x, y, R, col, ctr in spots:
                 d = min(abs(t - ctr), 1 - abs(t - ctr))
                 p = max(0.0, math.cos(min(1.0, d / 0.2) * math.pi / 2)) ** 1.5
@@ -4981,8 +5029,7 @@ class App:
                 px, py = int(x - st.width / 2), int(y - st.height / 2)
                 if 0 <= px and 0 <= py and px + st.width <= W and py + st.height <= H:
                     fr.alpha_composite(st, (px, py))
-            frames.append(fr)
-        return frames, pad
+            return fr
 
     def set_hold(self, state):
         """Đổi ảnh con trỏ khi bắt đầu / thôi giữ chuột (ảnh đã vẽ sẵn nên rất nhẹ)."""
