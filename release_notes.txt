@@ -1,15 +1,9 @@
-✦ Mới trong 2.0.0
-- Kho con trỏ trực tuyến: Bộ sưu tập có mục "Trực tuyến" với các mẫu mới (đợt đầu: Kiếm Hoàng kim, Lửa Địa ngục, Pha lê Ngọc lục, Mũi tên Huyết, Rune Hư không, Cầu Độc). Bấm là tải về, con trỏ nằm trong mục "Của bạn". Mẫu mới sẽ được thêm mà không cần cập nhật app
-- Con trỏ yêu thích: bấm ☆ trên ô con trỏ trong Bộ sưu tập. Khi có yêu thích, Ctrl + Alt + R chỉ đổi giữa các con trỏ yêu thích
-- Đổi nhanh từ khay hệ thống: chuột phải icon EzCursor để chọn con trỏ (Yêu thích, Bộ EzCursor, Hình cơ bản, Bibata, Con trỏ của bạn) hoặc hồ sơ game
-- Thiết lập lần đầu: người mới cài được hướng dẫn 3 bước chọn game, chọn con trỏ và xem các phím tắt
-- Con trỏ của bạn: nhóm "Của bạn" trong Bộ sưu tập lưu mọi con trỏ bạn đã thêm (PNG, GIF động, .cur, .ani), có thể tô màu hoặc xóa. Ảnh đã tải lên ở các bản trước được tự động chuyển vào đây
-- Tìm con trỏ nhanh: bấm Ctrl + Alt + F hoặc lắc chuột qua lại thật nhanh, con trỏ phóng to và tỏa vòng sáng trong khoảng 1 giây. Có thể tắt "Lắc chuột để tìm" và đổi phím trong tab Tùy chọn
+✦ Mới trong 2.1.0
+- Màu ombre: con trỏ chuyển màu dần từ mũi ra đuôi. Có 8 dải màu sẵn (Hoàng hôn, EzCursor, Đại dương, Lửa, Độc dược, Băng giá, Hư không, Cầu vồng) hoặc tự chọn 2–3 màu. Dùng được cho Bộ EzCursor, Bibata, hình cơ bản và con trỏ của bạn. Bật ở tab Con trỏ (dưới khung xem trước) hoặc chọn chủ đề "Ombre" trong Bộ sưu tập
+- Ombre chuyển động: dải màu chạy liên tục trên con trỏ, chọn tốc độ Chậm / Vừa / Nhanh (mặc định tắt)
+- Mỗi hồ sơ game có màu ombre riêng
 
-✦ New in 2.0.0
-- Online cursor catalog: the Library has a new "Online" section with fresh designs (first batch: Golden Blade, Hellfire, Emerald Crystal, Blood Arrow, Void Rune, Toxic Orb). Click to download; it lands in "Yours". New designs can be added without an app update
-- Favorite cursors: click ☆ on a cursor tile in the Library. Once you have favorites, Ctrl + Alt + R cycles through them only
-- Quick switch from the system tray: right-click the EzCursor icon to pick a cursor (Favorites, EzCursor set, Basic shapes, Bibata, Your cursors) or a game profile
-- First-run setup: new users get a 3-step guide to pick their games, a cursor and learn the hotkeys
-- Your cursors: the "Yours" group in the Library keeps every cursor you add (PNG, animated GIF, .cur, .ani); tint or delete them. Images uploaded in earlier versions are moved here automatically
-- Find your cursor: press Ctrl + Alt + F or shake the mouse quickly and the cursor grows with a glowing ring for about a second. "Shake to find" and the hotkey can be changed in the Options tab
+✦ New in 2.1.0
+- Ombre colors: the cursor blends from one color to the next, from tip to tail. Pick one of 8 ready-made gradients (Sunset, EzCursor, Ocean, Fire, Toxic, Frost, Void, Rainbow) or choose 2–3 colors yourself. Works with the EzCursor set, Bibata, basic shapes and your own cursors. Turn it on in the Cursor tab (below the preview) or pick the "Ombre" theme in the Library
+- Animated ombre: the gradient flows along the cursor, with Slow / Medium / Fast speeds (off by default)
+- Each game profile keeps its own ombre colors

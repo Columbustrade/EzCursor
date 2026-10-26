@@ -20,6 +20,7 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 - **Con trỏ yêu thích**: bấm ☆ trên ô con trỏ, Ctrl + Alt + R chỉ đổi giữa các con trỏ yêu thích
 - **Đổi nhanh từ khay hệ thống**: chuột phải icon EzCursor để chọn con trỏ hoặc hồ sơ game
 - **Thiết lập lần đầu** 3 bước: chọn game, chọn con trỏ, xem phím tắt
+- **Màu ombre**: con trỏ chuyển màu từ mũi ra đuôi (8 dải màu sẵn hoặc tự chọn), có thể cho dải màu chuyển động
 - **Bộ EzCursor** gồm 14 con trỏ phong cách game (Liquid Drop, Mảnh hồng, Tâm ngắm Neon, Mũi kiếm, Mũi tên Pha lê, Viên ngọc, Ký tự Rune, Cầu năng lượng, Ngọn lửa, Mũi giáo, Lông vũ, Ngôi sao, Mũi tên Bắn, Mũi tên Neon), dùng màu gốc hoặc đổi sang màu bất kỳ
 - Bộ sưu tập con trỏ **Bibata** với các chủ đề Amber, Classic, Ice hoặc màu tùy chỉnh, kiểu Modern / Original, cho cả người thuận tay trái
 - Chỉ hiện trong những game / ứng dụng bạn chọn, ra ngoài thì con trỏ trở lại bình thường; có sẵn gợi ý các game ARPG phổ biến

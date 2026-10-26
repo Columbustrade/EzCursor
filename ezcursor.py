@@ -47,7 +47,7 @@ import pystray
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageSequence, ImageTk
 
 APP_NAME = "EzCursor"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 
 # ======== SỬA DÒNG NÀY thành repository GitHub của bạn (tên-tài-khoản/tên-repo) ========
 GITHUB_REPO = "ezcursor/EzCursor"
@@ -317,6 +317,10 @@ DEFAULT_CFG = {
     "hold_left_color": "#22D3EE",
     "hold_right": False,
     "hold_right_color": "#FFD60A",
+    "ombre": False,                                     # dải màu ombre thay cho một màu
+    "ombre_colors": ["#FF2E93", "#FF8A3D", "#FFD60A"],
+    "ombre_anim": False,                                # dải màu chạy chầm chậm
+    "ombre_speed": "mid",
     "hide_real": True,
     "enabled": True,
     "all_apps": False,
@@ -389,7 +393,8 @@ def default_cfg():
 STYLE_KEYS = ("color", "shape", "size", "image", "hotspot", "tint_image", "glow", "cursor_sparkle",
               "fx_trail", "fx_click", "fx_color", "fx_density",
               "bibata_cursor", "bibata_theme", "bibata_style", "bibata_hand", "own_theme",
-              "hold_left", "hold_left_color", "hold_right", "hold_right_color")
+              "hold_left", "hold_left_color", "hold_right", "hold_right_color",
+              "ombre", "ombre_colors", "ombre_anim", "ombre_speed")
 
 
 def clean_style(cfg):
@@ -421,8 +426,13 @@ def clean_style(cfg):
     for k in ("color", "hold_left_color", "hold_right_color"):
         if not isinstance(cfg[k], str) or len(cfg[k]) != 7 or not cfg[k].startswith("#"):
             cfg[k] = DEFAULT_CFG[k]
-    for k in ("tint_image", "glow", "cursor_sparkle", "hold_left", "hold_right"):
+    for k in ("tint_image", "glow", "cursor_sparkle", "hold_left", "hold_right", "ombre", "ombre_anim"):
         cfg[k] = bool(cfg[k])
+    oc = cfg["ombre_colors"]
+    oc = [x for x in oc if isinstance(x, str) and len(x) == 7 and x.startswith("#")] if isinstance(oc, list) else []
+    cfg["ombre_colors"] = oc[:5] if len(oc) >= 2 else list(DEFAULT_CFG["ombre_colors"])
+    if cfg["ombre_speed"] not in OMBRE_SPEEDS:
+        cfg["ombre_speed"] = "mid"
     if cfg["image"] and not Path(cfg["image"]).exists():
         name = Path(cfg["image"]).name
         alt = next((d / name for d in (MY_DIR, APP_DIR) if (d / name).exists()), None)
@@ -733,6 +743,11 @@ TR_EN = {
     "Không tải được con trỏ:": "Couldn't download the cursor:",
     "File không khớp mã kiểm tra": "Checksum mismatch", "File con trỏ bị lỗi": "The cursor file is damaged",
     "File quá lớn": "File too large",
+    "MÀU OMBRE": "OMBRE", "  Chuyển động": "  Animate", "Chậm": "Slow", "Nhanh": "Fast",
+    "Hoàng hôn": "Sunset", "Đại dương": "Ocean", "Lửa": "Fire", "Độc dược": "Toxic", "Băng giá": "Frost",
+    "Hư không": "Void", "Cầu vồng": "Rainbow", "Tự chọn": "Custom", "Tự chọn màu ombre": "Custom ombre",
+    "Màu 1 ở mũi con trỏ, màu cuối ở đuôi.": "Color 1 is at the cursor tip, the last color at the tail.",
+    "Dùng 3 màu": "Use 3 colors", "Dùng dải màu này": "Use these colors", "Hủy": "Cancel",
     "Của bạn": "Yours", "Tô màu": "Tinted", "+ Thêm con trỏ": "+ Add cursor", "Xóa con trỏ này": "Delete this cursor",
     "Xóa con trỏ \"{n}\" khỏi bộ sưu tập?": "Remove the cursor \"{n}\" from your library?",
     "Chưa có con trỏ nào. Bấm \"+ Thêm con trỏ\" để thêm ảnh PNG, GIF hoặc file con trỏ .cur, .ani.":
@@ -825,6 +840,136 @@ def tint_image(im, color):
     out = Image.composite(colored, rgb, mask)
     out.putalpha(alpha)
     return out
+
+
+# ---------------------------------------------------------------- Màu ombre (2.1.0)
+OMBRE_PRESETS = [   # (mã, tên, các màu từ mũi ra đuôi)
+    ("sunset", "Hoàng hôn", ["#FF2E93", "#FF8A3D", "#FFD60A"]),
+    ("ez", "EzCursor", ["#2EE59D", "#2F80FF", "#FF2E93"]),
+    ("ocean", "Đại dương", ["#22D3EE", "#3B7BF9", "#8B5CF6"]),
+    ("fire", "Lửa", ["#FFD60A", "#FF6A00", "#E01E37"]),
+    ("toxic", "Độc dược", ["#E4FF3B", "#7CF03B", "#14B8A6"]),
+    ("frost", "Băng giá", ["#E0F7FF", "#7DD3FC", "#3B82F6"]),
+    ("void", "Hư không", ["#F0ABFC", "#A855F7", "#4C1D95"]),
+    ("rainbow", "Cầu vồng", ["#FF3B3B", "#FFD60A", "#2EE59D", "#22D3EE", "#A855F7"]),
+]
+OMBRE_SPEEDS = {"slow": 150, "mid": 90, "fast": 50}      # ms mỗi khung (24 khung một vòng)
+OMBRE_FRAMES = 24
+
+
+_tmap_cache = {}
+
+
+def ombre_tmap(im, hot):
+    """Ảnh xám: 0 ở điểm click, 255 ở phần xa nhất (đuôi). Điểm click ở giữa thì chuyển chéo."""
+    key = (im.size, tuple(hot), hash(im.getchannel("A").tobytes()))
+    if key not in _tmap_cache:
+        if len(_tmap_cache) > 64:
+            _tmap_cache.clear()
+        _tmap_cache[key] = _ombre_tmap(im, hot)
+    return _tmap_cache[key]
+
+
+def _ombre_tmap(im, hot):
+    w, h = im.size
+    bb = im.getchannel("A").point(lambda v: 255 if v > 30 else 0).getbbox() or (0, 0, w, h)
+    hx, hy = hot
+    cx, cy = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
+    if math.hypot(cx - hx, cy - hy) < 0.18 * max(bb[2] - bb[0], bb[3] - bb[1], 1):
+        hx, hy = bb[0], bb[1]                         # con trỏ tâm (tâm ngắm, vòng tròn): góc trên trái -> dưới phải
+    dx, dy = cx - hx, cy - hy
+    n = math.hypot(dx, dy) or 1.0
+    dx, dy = dx / n, dy / n
+    m = max((x - hx) * dx + (y - hy) * dy for x in (bb[0], bb[2]) for y in (bb[1], bb[3])) or 1.0
+    k = 255.0 / m
+    data = [max(0, min(255, int(((x + 0.5 - hx) * dx + (y + 0.5 - hy) * dy) * k)))
+            for y in range(h) for x in range(w)]
+    t = Image.new("L", (w, h))
+    t.putdata(data)
+    return t
+
+
+_ombre_luts = {}
+
+
+def ombre_lut(colors, phase=0.0, anim=False):
+    """Bảng 256 màu cho từng kênh R, G, B. Chuyển động: dải màu đi qua lại, nối liền khi lặp."""
+    key = (tuple(colors), round(phase, 4), anim)
+    if key in _ombre_luts:
+        return _ombre_luts[key]
+    stops = [_rgb(c) for c in colors]
+    if anim:
+        stops = stops + stops[-2::-1]
+    n = len(stops) - 1
+    out = ([], [], [])
+    for i in range(256):
+        u = i / 255
+        if anim:
+            u = (u * 0.5 + phase) % 1.0
+        pos = u * n
+        j = min(int(pos), n - 1)
+        f = pos - j
+        for ch in range(3):
+            out[ch].append(int(stops[j][ch] + (stops[j + 1][ch] - stops[j][ch]) * f))
+    if len(_ombre_luts) > 200:
+        _ombre_luts.clear()
+    _ombre_luts[key] = out
+    return out
+
+
+def apply_ombre(im, tmap, lut):
+    """Tô dải màu lên phần có màu của ảnh, giữ phần trắng/đen và độ sáng tối (bóng, điểm sáng)."""
+    g = Image.merge("RGB", [tmap.point(ch) for ch in lut])
+    gh, gs, gv = g.convert("HSV").split()
+    rgb = im.convert("RGB")
+    _h, sat, val = rgb.convert("HSV").split()
+    mask = sat.point(lambda x: max(0, min(255, (x - 40) * 4)))
+    ns = ImageChops.multiply(sat.point(lambda x: min(255, int(x * 1.3))), gs)
+    nv = ImageChops.multiply(val.point(lambda x: min(255, 60 + x)), gv)
+    colored = Image.merge("HSV", (gh, ns, nv)).convert("RGB")
+    out = Image.composite(colored, rgb, mask)
+    out.putalpha(im.getchannel("A"))
+    return out
+
+
+def ombre_dot(colors, selected, size=30):
+    """Ô tròn dải màu (có vòng trắng khi đang chọn); colors=None: ô "+" tự chọn."""
+    k = 4
+    W = size * k
+    out = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    d = ImageDraw.Draw(out)
+    if colors is None:
+        d.ellipse([k, k, W - k - 1, W - k - 1], outline="#4A5266", width=k)
+        m, t = W // 2, W // 7
+        d.line([(m - t, m), (m + t, m)], fill="#9AA3B8", width=int(1.6 * k))
+        d.line([(m, m - t), (m, m + t)], fill="#9AA3B8", width=int(1.6 * k))
+        return out.resize((size, size), Image.LANCZOS)
+    inset = 5 * k if selected else 2 * k
+    sw = ombre_swatch(colors, (W - 2 * inset) // k).resize((W - 2 * inset, W - 2 * inset), Image.LANCZOS)
+    out.alpha_composite(sw, (inset, inset))
+    if selected:
+        d.ellipse([k, k, W - k - 1, W - k - 1], outline="#FFFFFF", width=int(1.8 * k))
+    return out.resize((size, size), Image.LANCZOS)
+
+
+def ombre_swatch(colors, size=32, round_=True):
+    """Ô tròn (hoặc thanh) dải màu để hiện trên nút."""
+    w, h = (size, size) if round_ else (size * 4, size)
+    bar = Image.new("RGB", (256, 1))
+    lut = ombre_lut(colors)
+    bar.putdata([(lut[0][i], lut[1][i], lut[2][i]) for i in range(256)])
+    bar = bar.resize((w * 4, h * 4), Image.BILINEAR)
+    if round_:
+        bar = bar.rotate(-45, resample=Image.BICUBIC, expand=False, fillcolor=_rgb(colors[-1]))
+    mask = Image.new("L", (w * 4, h * 4), 0)
+    d = ImageDraw.Draw(mask)
+    if round_:
+        d.ellipse([2, 2, w * 4 - 3, h * 4 - 3], fill=255)
+    else:
+        d.rounded_rectangle([0, 0, w * 4 - 1, h * 4 - 1], radius=h * 2, fill=255)
+    out = bar.convert("RGBA")
+    out.putalpha(mask)
+    return out.resize((w, h), Image.LANCZOS)
 
 
 # ---------------------------------------------------------------- Phím tắt tùy chỉnh
@@ -2364,6 +2509,7 @@ class App:
                              highlightbackground=BORDER, bd=0)
         self.pcv.pack(padx=14, pady=(0, 14))
         self.build_preview_canvas()
+        self.build_ombre_box(pv)
 
         # --- Điều khiển
         ctl = self.card(body)
@@ -2527,6 +2673,12 @@ class App:
                               command=lambda k=key: self.set_own_theme(k))
             b.pack(side="left", padx=(0, 8))
             self.own_theme_buttons[key] = b
+        self.ombre_chips = []
+        for view in ("ez", "bibata", "mine"):
+            b = ctk.CTkButton(self.chip_rows[view], text="Ombre", height=40, width=118, corner_radius=10,
+                              border_width=1, font=self.F.b(13, strong=True), compound="left",
+                              command=lambda v=view: self.lib_ombre(v))
+            self.ombre_chips.append(b)
         themes = [(k, v[0]) for k, v in BIBATA_THEMES.items()] + [("custom", T("Tùy chỉnh"))]
         for key, label in themes:
             b = ctk.CTkButton(self.chip_rows["bibata"], text=label, height=40, width=118, corner_radius=10,
@@ -2534,6 +2686,8 @@ class App:
                               command=lambda k=key: self.set_bib("bibata_theme", k))
             b.pack(side="left", padx=(0, 8))
             self.theme_buttons[key] = b
+        for b in self.ombre_chips:
+            b.pack(side="left", padx=(0, 8))
 
         self.sw_caps = self.caps(page, "MÀU TÙY CHỈNH")
         self.sw_caps.pack(anchor="w", pady=(12, 0))
@@ -2838,6 +2992,7 @@ class App:
 
     def set_mine_tint(self, on):
         self.cfg["tint_image"] = on
+        self.cfg["ombre"] = False
         try:
             self.tint_var.set(on)
         except AttributeError:
@@ -2886,12 +3041,14 @@ class App:
 
     def set_own_theme(self, theme):
         self.cfg["own_theme"] = theme
+        self.cfg["ombre"] = False
         if self.cfg["shape"] not in OWN_BY_ID:
             self.cfg["shape"] = "EzDrop"
         self.refresh()
 
     def set_bib_color(self, color):
         self.cfg["color"] = color
+        self.cfg["ombre"] = False
         if self.lib_view == "mine":
             self.set_mine_tint(True)
             return
@@ -2912,6 +3069,8 @@ class App:
 
     def set_bib(self, key, value):
         self.cfg[key] = value
+        if key == "bibata_theme":
+            self.cfg["ombre"] = False
         if key == "bibata_theme" and self.cfg["shape"] != "Bibata":
             self.cfg["shape"] = "Bibata"
         self.refresh()
@@ -2990,6 +3149,13 @@ class App:
 
     def update_library(self):
         self._update_library()
+        c = self.cfg
+        oimg = ctk.CTkImage(ombre_swatch(c["ombre_colors"], 32), size=(16, 16))
+        for b in getattr(self, "ombre_chips", []):
+            try:
+                self._chip_style(b, c["ombre"], oimg)
+            except tk.TclError:
+                pass
         for sb in getattr(self, "star_btns", {}).values():
             try:
                 col = sb.master.cget("fg_color")
@@ -3008,14 +3174,14 @@ class App:
         for key, b in self.own_theme_buttons.items():
             img = (ctk.CTkImage(own_image("EzDrop").resize((32, 32), Image.LANCZOS), size=(16, 16))
                    if key == "original" and own_image("EzDrop") is not None else self._chip_dot(c["color"]))
-            self._chip_style(b, key == c["own_theme"], img)
+            self._chip_style(b, key == c["own_theme"] and not c["ombre"], img)
         for key, b in self.theme_buttons.items():
             col = BIBATA_THEMES[key][1] if key in BIBATA_THEMES else c["color"]
-            self._chip_style(b, key == c["bibata_theme"], self._chip_dot(col))
+            self._chip_style(b, key == c["bibata_theme"] and not c["ombre"], self._chip_dot(col))
         for key, b in getattr(self, "mine_theme_buttons", {}).items():
             img = (self._chip_dot(c["color"]) if key == "tint" or own_image("EzDrop") is None
                    else ctk.CTkImage(own_image("EzDrop").resize((32, 32), Image.LANCZOS), size=(16, 16)))
-            self._chip_style(b, (key == "tint") == bool(c["tint_image"]), img)
+            self._chip_style(b, (key == "tint") == bool(c["tint_image"]) and not c["ombre"], img)
         favs = set(c["favorites"])
         for fid, sb in getattr(self, "star_btns", {}).items():
             on = fid in favs
@@ -3043,7 +3209,7 @@ class App:
         if getattr(self, "mine_del", None):
             self.mine_del.configure(state="normal" if mine_sel and mine_sel in self.mine_tiles else "disabled")
         custom_on = {"ez": c["own_theme"] == "custom", "bibata": c["bibata_theme"] == "custom",
-                     "mine": bool(c["tint_image"])}.get(view, False)
+                     "mine": bool(c["tint_image"])}.get(view, False) and not c["ombre"]
         known = set()
         for col, b in self.bib_swatches.items():
             known.add(col.lower())
@@ -3059,20 +3225,30 @@ class App:
                                           border_color="#4A5266",
                                           image=ctk.CTkImage(simple_icon("plus", TEXT2, 32), size=(14, 14)))
         # hình trên ô: chỉ vẽ lại khi đổi chủ đề / màu
-        osig = (c["own_theme"], c["color"].lower() if c["own_theme"] == "custom" else "")
+        oc = tuple(c["ombre_colors"]) if c["ombre"] else None
+        osig = (c["own_theme"], c["color"].lower() if c["own_theme"] == "custom" else "", oc)
         if osig != self._own_sig:
             self._own_sig = osig
             for shape, b in self.own_tiles.items():
-                im = own_image_colored(shape, c["color"]) if c["own_theme"] == "custom" else own_image(shape)
-                b.configure(image=ctk.CTkImage(im.resize((112, 112), Image.LANCZOS), size=(56, 56)))
+                if oc:
+                    im = own_image(shape).resize((112, 112), Image.LANCZOS)
+                    hx, hy = OWN_BY_ID[shape][3]
+                    im = apply_ombre(im, ombre_tmap(im, (hx * 112 // 256, hy * 112 // 256)), ombre_lut(oc))
+                else:
+                    im = own_image_colored(shape, c["color"]) if c["own_theme"] == "custom" else own_image(shape)
+                    im = im.resize((112, 112), Image.LANCZOS)
+                b.configure(image=ctk.CTkImage(im, size=(56, 56)))
         if self.bib_tiles:
             variant = self.bibata_variant()
-            colors = bibata_colors(c["bibata_theme"], c["color"])
-            sig = (variant, colors)
+            colors = bibata_colors("custom" if oc else c["bibata_theme"], oc[0] if oc else c["color"])
+            sig = (variant, colors, oc)
             if sig != self._lib_sig:
                 self._lib_sig = sig
                 for name, b in self.bib_tiles.items():
                     im = bibata_image(BIBATA_DIR, variant, name, colors).resize((112, 112), Image.LANCZOS)
+                    if oc:
+                        hx, hy = BIBATA_META["hotspots"].get(f"{variant}/{name}", [128, 128])
+                        im = apply_ombre(im, ombre_tmap(im, (hx * 112 // 256, hy * 112 // 256)), ombre_lut(oc))
                     b.configure(image=ctk.CTkImage(im, size=(56, 56)))
         tile_bg = mix(FIELD, "#FFFFFF", 0.05) if c["bibata_theme"] == "classic" else FIELD
         for shape, tile in self.own_tiles.items():
@@ -3831,14 +4007,18 @@ class App:
     def glow_color(self):
         return self.composed[2] if self.composed else self.preview_color()
 
-    def compose_cursor(self, outline=None):
+    def compose_cursor(self, outline=None, phase=0.0):
         """Ảnh con trỏ hoàn chỉnh dùng cho cả overlay lẫn xem trước: (ảnh, điểm click, màu quầng).
-        outline: màu viền khi giữ chuột (None = không viền)."""
+        outline: màu viền khi giữ chuột (None = không viền). phase: vị trí dải màu khi ombre chuyển động."""
         c = self.cfg
         s = self.eff_size()
+        ombre = c["ombre"]
+        oc = c["ombre_colors"]
         if own_image(c["shape"]) is not None:
             _, _, _, (hx, hy), glow_col = OWN_BY_ID[c["shape"]]
-            if c["own_theme"] == "custom":
+            if ombre:
+                im = own_image(c["shape"]).resize((s, s), Image.LANCZOS)
+            elif c["own_theme"] == "custom":
                 im = own_image_colored(c["shape"], c["color"]).resize((s, s), Image.LANCZOS)
                 glow_col = c["color"]
             else:
@@ -3846,7 +4026,7 @@ class App:
             hot = (round(hx * s / 256), round(hy * s / 256))
         elif c["shape"] == "Bibata" and BIBATA_DIR.exists():
             variant = self.bibata_variant()
-            cols = bibata_colors(c["bibata_theme"], c["color"])
+            cols = bibata_colors("custom" if ombre else c["bibata_theme"], oc[0] if ombre else c["color"])
             im = bibata_image(BIBATA_DIR, variant, c["bibata_cursor"], cols).resize((s, s), Image.LANCZOS)
             hx, hy = BIBATA_META["hotspots"].get(f"{variant}/{c['bibata_cursor']}", [128, 128])
             hot = (round(hx * s / 256), round(hy * s / 256))
@@ -3854,10 +4034,14 @@ class App:
         else:
             shape = c["shape"] if c["shape"] not in ("Bibata",) + tuple(OWN_BY_ID) else "Vòng tròn"
             src = self.src_img
-            if src is not None and c["tint_image"]:
+            if src is not None and c["tint_image"] and not ombre:
                 src = tint_image(src, c["color"])
-            glow_col = self.preview_color()
+            glow_col = oc[0] if ombre else self.preview_color()
             im, hot = render_shape(shape, glow_col, s, src, c["hotspot"], self.src_hot)
+        if ombre:
+            anim = c["ombre_anim"] and not self.animated_image()
+            im = apply_ombre(im, ombre_tmap(im, hot), ombre_lut(oc, phase, anim))
+            glow_col = oc[0]
         if c["hold_left"] or c["hold_right"]:      # mọi biến thể cùng kích thước để điểm click không lệch
             w = outline_width(s)
             im, hot = add_outline(im, hot, outline, w) if outline else pad_image(im, hot, w + 2)
@@ -3901,8 +4085,11 @@ class App:
             self._cf_job = None
         if self.animated_image():
             self._cf_job = self.ov.after(160, self.build_image_frames)
-        elif self.cfg["cursor_sparkle"]:
+        elif self.cfg["cursor_sparkle"] or self.ombre_moving():
             self._cf_job = self.ov.after(160, self.build_cursor_frames)
+
+    def ombre_moving(self):
+        return self.cfg["ombre"] and self.cfg["ombre_anim"] and not self.animated_image()
 
     def build_image_frames(self):
         """Khung hình cho ảnh động (.ani / .gif), mỗi khung giữ đúng thời gian của file gốc."""
@@ -3936,17 +4123,25 @@ class App:
         self.preview_photos = [photos.setdefault(id(fr), ImageTk.PhotoImage(fr, master=self.ov)) for fr in frames]
 
     def build_cursor_frames(self):
-        """Tạo 24 khung hình con trỏ có ngôi sao nhấp nháy quanh (vòng lặp ~2,4 giây)."""
+        """24 khung hình: ngôi sao nhấp nháy quanh con trỏ và/hoặc dải màu ombre chạy."""
         self._cf_job = None
         if not self.composed:
             return
-        sets = {}
+        sets, pad = {}, 0
+        moving = self.ombre_moving()
+        cols = self.hold_colors()
         for key, comp in self.variants.items():
-            sets[key], pad = self.sparkle_frames(comp)
+            ims = ([comp[0]] + [self.compose_cursor(cols.get(key), i / OMBRE_FRAMES)[0]
+                                for i in range(1, OMBRE_FRAMES)]) if moving else None
+            if self.cfg["cursor_sparkle"]:
+                sets[key], pad = self.sparkle_frames(comp, ims)
+            else:
+                sets[key] = ims
         hot = self.composed[1]
         self.frame_sets = sets
         self.cursor_frames = sets.get(self.hold_state, sets[None])
-        self.cursor_durations = [96] * len(self.cursor_frames)
+        ms = OMBRE_SPEEDS[self.cfg["ombre_speed"]] if moving else 96
+        self.cursor_durations = [ms] * len(self.cursor_frames)
         self.cf_idx, self.cf_next = 0, 0.0
         self.pv_idx, self.pv_next = 0, 0.0
         self.ov_hot = (hot[0] + pad, hot[1] + pad)
@@ -3955,8 +4150,9 @@ class App:
             self.move_overlay()
         self.preview_photos = [ImageTk.PhotoImage(fr, master=self.ov) for fr in sets[None]]
 
-    def sparkle_frames(self, composed):
-        """24 khung hình có ngôi sao nhấp nháy quanh con trỏ; trả về (khung hình, phần lề thêm)."""
+    def sparkle_frames(self, composed, ims=None):
+        """24 khung hình có ngôi sao nhấp nháy quanh con trỏ; trả về (khung hình, phần lề thêm).
+        ims: ảnh con trỏ riêng cho từng khung (ombre chuyển động)."""
         im, hot, gcol = composed
         s = self.eff_size()
         bb = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox() or (0, 0, im.width, im.height)
@@ -3974,7 +4170,7 @@ class App:
         for i in range(N):
             t = i / N
             fr = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-            fr.alpha_composite(im, (pad, pad))
+            fr.alpha_composite(ims[i] if ims else im, (pad, pad))
             for x, y, R, col, ctr in spots:
                 d = min(abs(t - ctr), 1 - abs(t - ctr))
                 p = max(0.0, math.cos(min(1.0, d / 0.2) * math.pi / 2)) ** 1.5
@@ -4022,7 +4218,7 @@ class App:
                 b.configure(fg_color=FIELD, hover_color="#161A23", border_color=BORDER, text_color=TEXT2)
         # con trỏ đang dùng màu gốc (bộ EzCursor / chủ đề Bibata có sẵn) thì không ô màu nào sáng
         uses_color = not ((c["shape"] in OWN_BY_ID and c["own_theme"] == "original")
-                          or (c["shape"] == "Bibata" and c["bibata_theme"] != "custom"))
+                          or (c["shape"] == "Bibata" and c["bibata_theme"] != "custom") or c["ombre"])
         for col, b in self.swatch_buttons.items():
             on = uses_color and col.lower() == c["color"].lower()
             b.configure(border_width=3 if on else 0, border_color="#FFFFFF")
@@ -4035,6 +4231,7 @@ class App:
                                       border_color="#4A5266",
                                       image=ctk.CTkImage(simple_icon("plus", TEXT2, 32), size=(14, 14)))
         self.size_label.configure(text=f"{c['size']} px")
+        self.update_ombre_ui()
 
     def refresh(self):
         self.rebuild_overlay()
@@ -4226,6 +4423,7 @@ class App:
         if color.lower() == TRANSPARENT:
             color = "#020202"
         self.cfg["color"] = color
+        self.cfg["ombre"] = False
         if self.cfg["shape"] == "Bibata":
             self.cfg["bibata_theme"] = "custom"
         elif self.cfg["shape"] in OWN_BY_ID:
@@ -4236,6 +4434,164 @@ class App:
         res = colorchooser.askcolor(color=self.cfg["color"], parent=self.win, title=T("Chọn màu"))
         if res and res[1]:
             self.set_color(res[1])
+
+    # ------------------------------------------------------------ Màu ombre
+    def build_ombre_box(self, parent):
+        box = ctk.CTkFrame(parent, fg_color="transparent")
+        box.pack(fill="x", padx=14, pady=(0, 12))
+        head = ctk.CTkFrame(box, fg_color="transparent")
+        head.pack(fill="x")
+        self.caps(head, "MÀU OMBRE").pack(side="left")
+        self.ombre_name = ctk.CTkLabel(head, text="", font=self.F.b(12), text_color=TEXT2)
+        self.ombre_name.pack(side="left", padx=(8, 0))
+        self.ombre_var = tk.BooleanVar(value=self.cfg["ombre"])
+        self.switch(head, self.ombre_var, lambda: self.set_ombre(bool(self.ombre_var.get()))).pack(side="right")
+        row = ctk.CTkFrame(box, fg_color="transparent")
+        row.pack(fill="x", pady=(8, 8))
+        self.ombre_btns = {}
+        self.ombre_imgs = {}
+        for key, name, cols in OMBRE_PRESETS:
+            self.ombre_imgs[key] = {on: ctk.CTkImage(ombre_dot(cols, on), size=(30, 30)) for on in (False, True)}
+            b = ctk.CTkLabel(row, text="", width=30, height=30, image=self.ombre_imgs[key][False], cursor="hand2")
+            b.bind("<Button-1>", lambda e, cl=cols: self.set_ombre(True, cl))
+            b.pack(side="left", padx=(0, 5))
+            self.ombre_btns[key] = b
+        self.ombre_plus = ctk.CTkImage(ombre_dot(None, False), size=(30, 30))
+        self.ombre_custom = ctk.CTkLabel(row, text="", width=30, height=30, image=self.ombre_plus, cursor="hand2")
+        self.ombre_custom.bind("<Button-1>", lambda e: self.pick_ombre())
+        self.ombre_custom.pack(side="left")
+        row2 = ctk.CTkFrame(box, fg_color="transparent")
+        row2.pack(fill="x")
+        self.ombre_anim_var = tk.BooleanVar(value=self.cfg["ombre_anim"])
+        self.switch(row2, self.ombre_anim_var, self.set_ombre_anim).pack(side="left")
+        ctk.CTkLabel(row2, text=T("  Chuyển động"), font=self.F.b(13), text_color=TEXT).pack(side="left")
+        self.ombre_speed_map = {T("Chậm"): "slow", T("Vừa"): "mid", T("Nhanh"): "fast"}
+        self.ombre_speed_seg = ctk.CTkSegmentedButton(
+            row2, values=list(self.ombre_speed_map), height=30, font=self.F.b(12, strong=True), fg_color=FIELD,
+            unselected_color=FIELD, unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
+            selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT,
+            command=lambda v: self.set_ombre_speed(self.ombre_speed_map[v]))
+        self.ombre_speed_seg.pack(side="right")
+
+    def update_ombre_ui(self):
+        c = self.cfg
+        if not hasattr(self, "ombre_btns"):
+            return
+        try:
+            self.ombre_var.set(c["ombre"])
+            self.ombre_anim_var.set(c["ombre_anim"])
+            self.ombre_speed_seg.set({v: k for k, v in self.ombre_speed_map.items()}[c["ombre_speed"]])
+            cur = [x.lower() for x in c["ombre_colors"]]
+            name = ""
+            for key, pname, cols in OMBRE_PRESETS:
+                on = c["ombre"] and [x.lower() for x in cols] == cur
+                self.ombre_btns[key].configure(image=self.ombre_imgs[key][on])
+                if [x.lower() for x in cols] == cur:
+                    name = T(pname)
+            custom = not name
+            self.ombre_custom.configure(image=ctk.CTkImage(ombre_dot(c["ombre_colors"], c["ombre"]), size=(30, 30))
+                                        if custom else self.ombre_plus)
+            self.ombre_name.configure(text=("· " + (name or T("Tự chọn"))) if c["ombre"] else "")
+            state = "normal" if c["ombre"] else "disabled"
+            self.ombre_speed_seg.configure(state=state if c["ombre_anim"] else "disabled")
+        except (tk.TclError, AttributeError, KeyError):
+            pass
+
+    def set_ombre(self, on, colors=None):
+        c = self.cfg
+        c["ombre"] = on
+        if colors:
+            c["ombre_colors"] = list(colors)
+        self.refresh()
+
+    def set_ombre_anim(self):
+        self.cfg["ombre_anim"] = bool(self.ombre_anim_var.get())
+        if self.cfg["ombre_anim"]:
+            self.cfg["ombre"] = True
+        self.refresh()
+
+    def set_ombre_speed(self, speed):
+        self.cfg["ombre_speed"] = speed
+        self.refresh()
+
+    def lib_ombre(self, view):
+        """Chip "Ombre" trong Bộ sưu tập: dùng dải màu cho nhóm con trỏ đang xem."""
+        if view == "ez" and self.cfg["shape"] not in OWN_BY_ID:
+            self.cfg["shape"] = "EzDrop"
+        elif view == "bibata":
+            self.cfg["shape"] = "Bibata"
+        self.set_ombre(True)
+
+    def pick_ombre(self):
+        """Hộp thoại tự chọn 2 hoặc 3 màu ombre."""
+        cols = list(self.cfg["ombre_colors"][:3])
+        while len(cols) < 3:
+            cols.append(cols[-1])
+        three = tk.BooleanVar(value=len(self.cfg["ombre_colors"]) >= 3)
+        d = ctk.CTkToplevel(self.ov, fg_color=BG)
+        d.title(T("Tự chọn màu ombre"))
+        d.resizable(False, False)
+        d.attributes("-topmost", True)
+        d.transient(self.win)
+        frm = ctk.CTkFrame(d, fg_color="transparent")
+        frm.pack(fill="both", padx=22, pady=18)
+        ctk.CTkLabel(frm, text=T("Tự chọn màu ombre"), font=self.F.h(18), text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(frm, text=T("Màu 1 ở mũi con trỏ, màu cuối ở đuôi."), font=self.F.b(12),
+                     text_color=TEXT2).pack(anchor="w", pady=(2, 12))
+        row = ctk.CTkFrame(frm, fg_color="transparent")
+        row.pack(anchor="w")
+        bar = ctk.CTkLabel(frm, text="")
+        btns = []
+
+        def used():
+            return cols[:3] if three.get() else cols[:2]
+
+        def paint():
+            for i, b in enumerate(btns):
+                b.configure(fg_color=cols[i], hover_color=cols[i], state="normal" if i < 2 or three.get() else "disabled")
+            btns[2].configure(fg_color=cols[2] if three.get() else FIELD)
+            bar.configure(image=ctk.CTkImage(ombre_swatch(used(), 30, round_=False), size=(240, 30)))
+
+        def pick(i):
+            res = colorchooser.askcolor(color=cols[i], parent=d, title=T("Chọn màu"))
+            if res and res[1]:
+                cols[i] = res[1].upper()
+                paint()
+
+        for i in range(3):
+            b = ctk.CTkButton(row, text=str(i + 1), width=44, height=44, corner_radius=22, border_width=2,
+                              border_color="#FFFFFF", text_color="#0B0D12", font=self.F.b(13, strong=True),
+                              command=lambda i=i: pick(i))
+            b.pack(side="left", padx=(0, 10))
+            btns.append(b)
+        ctk.CTkCheckBox(frm, text=T("Dùng 3 màu"), variable=three, command=paint, font=self.F.b(13),
+                        text_color=TEXT, checkbox_width=20, checkbox_height=20, corner_radius=6, border_width=1,
+                        fg_color=ACCENT, hover_color=ACCENT, border_color="#4A5266",
+                        checkmark_color="#FFFFFF").pack(anchor="w", pady=(12, 10))
+        bar.pack(anchor="w")
+        foot = ctk.CTkFrame(frm, fg_color="transparent")
+        foot.pack(fill="x", pady=(16, 0))
+
+        def ok():
+            self.set_ombre(True, used())
+            d.destroy()
+
+        ctk.CTkButton(foot, text=T("Dùng dải màu này"), command=ok, height=40, corner_radius=10, fg_color=ACCENT,
+                      hover_color=mix(ACCENT, "#FFFFFF", 0.15), text_color="#FFFFFF",
+                      font=self.F.b(13, strong=True)).pack(side="right")
+        ctk.CTkButton(foot, text=T("Hủy"), command=d.destroy, width=80, height=40, corner_radius=10,
+                      fg_color="transparent", hover_color="#1A1E29", text_color=TEXT2,
+                      font=self.F.b(13)).pack(side="right", padx=(0, 8))
+        paint()
+        try:
+            d.update_idletasks()
+            x = self.win.winfo_rootx() + (self.win.winfo_width() - d.winfo_width()) // 2
+            y = self.win.winfo_rooty() + (self.win.winfo_height() - d.winfo_height()) // 3
+            d.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except tk.TclError:
+            pass
+        d.after(100, d.lift)
+        d.after(150, d.focus_force)
 
     def set_size(self, s):
         if s == self.cfg["size"]:
