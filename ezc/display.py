@@ -1,10 +1,12 @@
 """Màn hình: tỉ lệ DPI, phát hiện game Fullscreen."""
 
 import ctypes
+import hashlib
 import json
 import urllib.parse
 import urllib.request
 from ctypes import wintypes
+from pathlib import Path
 
 from PIL import Image, ImageDraw
 
@@ -63,8 +65,24 @@ def fetch_latest_release():
         "notes": data.get("body") or "",
         "url": asset["browser_download_url"] if asset else "",
         "size": asset.get("size", 0) if asset else 0,
+        # GitHub ghi sẵn mã SHA-256 của file ("sha256:..."); có thì dùng để kiểm tra bản tải về
+        "sha256": (asset.get("digest") or "")[7:].lower() if asset and str(asset.get("digest", "")).startswith("sha256:") else "",
         "page": data.get("html_url", f"https://github.com/{GITHUB_REPO}/releases"),
     }
+
+
+def verify_download(path, size, sha256=""):
+    """Bộ cài tải về phải đủ dung lượng và đúng mã SHA-256 (nếu GitHub có cung cấp) thì mới được chạy."""
+    data_size = Path(path).stat().st_size
+    if not data_size or (size and data_size != size):
+        return False
+    if sha256:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest() == sha256
+    return True
 
 
 def make_tray_icon():

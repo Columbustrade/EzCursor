@@ -90,7 +90,7 @@ TR_EN = {
     "Đang tải...": "Downloading...",
     "Đang cài đặt, EzCursor sẽ tự mở lại sau giây lát...": "Installing, EzCursor will reopen in a moment...",
     "Không chạy được bộ cài:": "Could not run the installer:", "Tải về thất bại.": "Download failed.",
-    "Tải bản cập nhật thất bại:": "Failed to download the update:", "Cập nhật": "Update",
+    "Tải bản cập nhật thất bại:": "Failed to download the update:", "File tải về không đầy đủ hoặc bị lỗi, hãy thử lại.": "The download is incomplete or damaged, please try again.", "Cập nhật": "Update",
     "CÓ PHIÊN BẢN MỚI": "NEW VERSION AVAILABLE", "   (bạn đang dùng {v})": "   (you have {v})",
     "CÓ GÌ MỚI": "WHAT'S NEW", "(không có ghi chú)": "(no release notes)", "CẬP NHẬT NGAY": "UPDATE NOW",
     "MỞ TRANG TẢI VỀ": "OPEN DOWNLOAD PAGE", "Để sau": "Later", "Bỏ qua phiên bản này": "Skip this version",

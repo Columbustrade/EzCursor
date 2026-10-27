@@ -98,3 +98,29 @@ def test_builtin_shapes_render():
     for shape in ("Mũi tên", "Vòng tròn", "Dấu thập", "Chấm tròn", "Kim cương"):
         im, hot = ez.render_shape(shape, "#22D3EE", 48, None, "Giữa ảnh")
         assert im.getbbox() is not None, shape
+
+
+def test_config_save_is_atomic_and_broken_file_is_kept(tmp_path, monkeypatch):
+    import ezc.config as config
+    p = tmp_path / "config.json"
+    monkeypatch.setattr(config, "CONFIG_PATH", p)
+    cfg = config.default_cfg()
+    cfg["size"] = 80
+    config.write_cfg(cfg)
+    assert json.loads(p.read_text(encoding="utf-8"))["size"] == 80
+    assert not (tmp_path / "config.json.tmp").exists()
+    p.write_text('{"size": 80, "profi', encoding="utf-8")         # file bị cắt ngang
+    loaded = config.load_cfg()
+    assert loaded["size"] == ez.DEFAULT_CFG["size"]
+    assert (tmp_path / "config.broken.json").read_text(encoding="utf-8").startswith('{"size": 80')
+
+
+def test_verify_download(tmp_path):
+    import hashlib
+    f = tmp_path / "setup.exe"
+    f.write_bytes(b"x" * 1000)
+    good = hashlib.sha256(b"x" * 1000).hexdigest()
+    assert ez.verify_download(f, 1000, good)
+    assert ez.verify_download(f, 1000, "")
+    assert not ez.verify_download(f, 2000, good)          # tải thiếu
+    assert not ez.verify_download(f, 1000, "0" * 64)       # sai mã kiểm tra

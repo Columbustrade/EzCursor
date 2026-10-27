@@ -2,6 +2,7 @@
 
 import collections.abc
 import json
+import os
 import re
 import shutil
 import urllib.parse
@@ -9,7 +10,7 @@ import urllib.request
 from pathlib import Path
 
 from . import i18n
-from .base import APP_DIR, APP_VERSION, CONFIG_PATH, MY_DIR, MY_EXTS, OLD_DIR
+from .base import APP_DIR, APP_VERSION, CONFIG_PATH, MY_DIR, MY_EXTS, OLD_DIR, log
 from .startup import run_value_exists, set_startup
 from .i18n import LANGUAGES
 from .hotkeys import HOTKEY_ACTIONS, HOTKEY_MODS, HOTKEY_VKS
@@ -257,14 +258,28 @@ def migrate_my_cursors(cfg):
         pass
 
 
+def write_cfg(data):
+    """Ghi config.json an toàn: ghi ra file tạm rồi thay thế, mất điện giữa chừng cũng không hỏng file cũ."""
+    tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, CONFIG_PATH)
+
+
 def load_cfg():
     cfg = default_cfg()
     raw = {}
     try:
         raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         cfg.update(raw)
-    except Exception:
+    except FileNotFoundError:
         pass
+    except Exception as e:      # file hỏng: giữ lại bản hỏng để còn cứu, rồi dùng cài đặt mặc định
+        raw = {}
+        try:
+            CONFIG_PATH.replace(CONFIG_PATH.with_name("config.broken.json"))
+        except OSError:
+            pass
+        log.warning("config.json bị hỏng (%s), đã lưu bản hỏng thành config.broken.json và dùng cài đặt mặc định", e)
     if not isinstance(raw, dict) or "setup_done" not in raw:     # đã dùng bản cũ thì không cần thiết lập lại
         cfg["setup_done"] = bool(raw)
     try:

@@ -15,7 +15,7 @@ import customtkinter as ctk
 from ..base import APP_NAME, APP_VERSION, res_path
 from ..i18n import T
 from ..colors import mix
-from ..display import fetch_latest_release, parse_version, update_configured
+from ..display import fetch_latest_release, parse_version, update_configured, verify_download
 from ..theme import ACCENT, BG, BORDER, CARD, CYAN, MUTED, TEXT, TEXT2
 
 
@@ -148,7 +148,7 @@ class UpdateMixin:
 
     def start_download(self, info):
         self.btn_update.configure(state="disabled")
-        dest = Path(tempfile.gettempdir()) / f"EzCursor_Setup_{info['version']}.exe"
+        dest = Path(tempfile.mkdtemp(prefix="EzCursor-")) / f"EzCursor_Setup_{info['version']}.exe"
 
         def work():
             try:
@@ -164,6 +164,9 @@ class UpdateMixin:
                         done += len(chunk)
                         if total:
                             self.q.put(("dl_progress", min(100.0, done * 100 / total)))
+                if not verify_download(dest, info.get("size", 0), info.get("sha256", "")):
+                    dest.unlink(missing_ok=True)
+                    raise ValueError(T("File tải về không đầy đủ hoặc bị lỗi, hãy thử lại."))
                 self.q.put(("dl_done", str(dest)))
             except Exception as e:
                 self.q.put(("dl_error", str(e)))

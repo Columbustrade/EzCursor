@@ -1,7 +1,6 @@
 """Lớp App (ghép từ các mixin) và hàm main() khởi động EzCursor."""
 
 import ctypes
-import json
 import logging
 import logging.handlers
 import os
@@ -16,11 +15,11 @@ import customtkinter as ctk
 import pystray
 
 from . import i18n
-from .base import APP_DIR, APP_NAME, APP_VERSION, CONFIG_PATH, QUIT_FLAG, SHOW_FLAG, log, res_path
+from .base import APP_DIR, APP_NAME, APP_VERSION, QUIT_FLAG, SHOW_FLAG, log, res_path
 from .winapi import ERROR_ALREADY_EXISTS, kernel32, user32
 from .system import cleanup
 from .i18n import T
-from .config import ProfileCfg, load_cfg, migrate_old_version
+from .config import ProfileCfg, load_cfg, migrate_old_version, write_cfg
 from .display import make_tray_icon
 from .theme import BG, Fonts, load_fonts
 from .icons import logo_frames
@@ -190,9 +189,11 @@ class App(
     def save(self):
         self.cfg["enabled"] = self.enabled
         try:
-            CONFIG_PATH.write_text(json.dumps(self.cfg.base, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+            write_cfg(self.cfg.base)
+        except Exception as e:
+            if not getattr(self, "save_warned", False):     # chỉ ghi nhật ký lần đầu, tránh đầy log
+                self.save_warned = True
+                log.warning("Không lưu được cài đặt: %s", e)
 
     def open_log_folder(self):
         try:
