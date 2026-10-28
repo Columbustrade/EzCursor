@@ -53,8 +53,8 @@ class FindMixin:
             ox, oy = round(C / 2 - hot[0] * k), round(C / 2 - hot[1] * k)
             cv.alpha_composite(big, (max(0, ox), max(0, oy)),
                                (max(0, -ox), max(0, -oy)))
+        self.find_hot = (C // 2, C // 2)        # đặt trước ảnh: chế độ stream gửi ảnh kèm đúng điểm click này
         self.ovl.set_image(cv)
-        self.find_hot = (C // 2, C // 2)
         if not self.ovl.visible:
             self.ovl.show(True)
         self.move_overlay()

@@ -1,6 +1,8 @@
 """Kiểm thử giao diện và vòng lặp bám chuột với Windows giả lập (chạy dưới xvfb trên Linux)."""
+import http.client
 import json
 import os
+import threading
 import re
 import shutil
 import sys
@@ -178,6 +180,52 @@ def test_stream_toggle(app):
     app.set_language("en")          # dòng cài đặt dựng lại được ở tiếng Anh, máy chủ vẫn chạy
     pump(app)
     assert app.stream is not None
+    assert not log_errors()
+
+
+def test_follow_smooth_while_stream_watched(app):
+    """Stream bật, OBS đang xem, con trỏ động + tìm con trỏ: con trỏ trên màn hình vẫn bám đều,
+    và ảnh tìm con trỏ lên stream kèm đúng điểm click của nó."""
+    app.stream_var.set(True)
+    app.set_stream()
+    app.hide_to_tray()
+    app.state["exe"] = "Last Epoch.exe"          # hồ sơ LE: lấp lánh (khung động)
+    pump(app, 30)
+    assert app.active
+    c = http.client.HTTPConnection("127.0.0.1", app.stream.port, timeout=5)
+    c.request("GET", "/events")
+    resp = c.getresponse()
+    imgs = []
+
+    def drain():                                  # như OBS: đọc liên tục
+        try:
+            while True:
+                line = resp.fp.readline().decode()
+                if not line:
+                    return
+                if line.startswith("data:") and '"png"' in line:
+                    imgs.append(json.loads(line[5:]))
+        except (OSError, ValueError):
+            pass
+
+    threading.Thread(target=drain, daemon=True).start()
+    app.ovl.moves.clear()
+    t0 = time.perf_counter()
+    found = False
+    while time.perf_counter() - t0 < 2:
+        app.state["x"] = 100 + int((time.perf_counter() - t0) * 800) % 1500
+        if not found and time.perf_counter() - t0 > 1:
+            found = True
+            app.start_find()
+        app.ov.update()
+    m = app.ovl.moves
+    worst = max((b - a for a, b in zip(m, m[1:])), default=1) * 1000
+    c.close()
+    assert len(m) > 100 and worst < 60, f"{len(m)} lần dời, khựng {worst:.0f} ms"
+    assert len({d["id"] for d in imgs}) > 3              # khung động lên stream
+    normal = max(d["w"] for d in imgs if d["id"] == imgs[0]["id"])
+    big = [d for d in imgs if d["w"] == d["h"] and d["w"] > 2 * normal]    # ảnh vòng sáng tìm con trỏ (~3,6 lần)
+    assert big and all((d["hx"], d["hy"]) == (d["w"] // 2, d["h"] // 2) for d in big)
     assert not log_errors()
 
 

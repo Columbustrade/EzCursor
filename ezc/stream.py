@@ -2,6 +2,7 @@
 
 Không đụng vào game: trang /cursor nhận ảnh con trỏ + vị trí chuột qua Server-Sent Events rồi tự vẽ."""
 
+import base64
 import ctypes
 import io
 import json
@@ -29,8 +30,9 @@ const es = new EventSource("/events");
 es.addEventListener("img", e => {
   const d = JSON.parse(e.data), im = new Image();
   want = d.id;
-  im.onload = () => { if (want === d.id) { img = {im: im, w: d.w, h: d.h}; dirty = true; } };
-  im.src = "/img/" + d.id + ".png";
+  // ảnh và điểm click đi cùng nhau: chỉ đổi khi ảnh mới đã sẵn sàng, con trỏ không giật
+  im.onload = () => { if (want === d.id) { img = {im: im, w: d.w, h: d.h, hx: d.hx, hy: d.hy}; dirty = true; } };
+  im.src = "data:image/png;base64," + d.png;
 });
 es.addEventListener("pos", e => { pos = JSON.parse(e.data); dirty = true; });
 es.onerror = () => { pos = null; dirty = true; };
@@ -40,7 +42,7 @@ es.onerror = () => { pos = null; dirty = true; };
     g.clearRect(0, 0, c.width, c.height);
     if (img && pos && pos.v && pos.gw > 0) {
       const k = c.width / pos.gw;     // khung OBS nhỏ hơn màn hình game thì con trỏ nhỏ lại tương ứng
-      g.drawImage(img.im, pos.x * c.width - pos.hx * k, pos.y * c.height - pos.hy * k, img.w * k, img.h * k);
+      g.drawImage(img.im, pos.x * c.width - img.hx * k, pos.y * c.height - img.hy * k, img.w * k, img.h * k);
     }
   }
   requestAnimationFrame(draw);
@@ -48,7 +50,7 @@ es.onerror = () => { pos = null; dirty = true; };
 </script></body></html>
 """
 
-KEEP = 64           # số ảnh gần nhất còn tải được (khung ombre / lấp lánh lặp lại)
+KEEP = 32           # số ảnh gần nhất nhớ id + PNG (đủ cho 24 khung ombre / lấp lánh lặp lại)
 TICK = 0.016        # ~60 lần/giây
 
 
@@ -119,9 +121,9 @@ class StreamServer:
         self.hot = hot              # () -> điểm click trong ảnh đang hiện
         self._lock = threading.Lock()
         self._n = 0
-        self._cur = None            # (số thứ tự, ảnh) đang hiện
-        self._imgs = OrderedDict()  # số -> ảnh (giữ KEEP ảnh gần nhất)
-        self._png = OrderedDict()   # số -> PNG đã mã hóa
+        self._cur = None            # (số thứ tự, ảnh, điểm click) đang hiện
+        self._seen = OrderedDict()  # id(ảnh) -> (số, ảnh, điểm click): khung lặp lại giữ số cũ
+        self._png = OrderedDict()   # số -> PNG base64 đã mã hóa
         self._visible = False
         self._stop = threading.Event()
         self._httpd = None
@@ -155,12 +157,22 @@ class StreamServer:
             self._httpd = None
 
     def publish_image(self, im):
+        try:
+            hot = tuple(int(v) for v in self.hot())       # điểm click đi cùng ảnh, đọc ngay lúc đổi ảnh
+        except Exception:
+            hot = (0, 0)
         with self._lock:
-            self._n += 1
-            self._imgs[self._n] = im
-            while len(self._imgs) > KEEP:
-                self._imgs.popitem(last=False)
-            self._cur = (self._n, im)
+            hit = self._seen.get(id(im))
+            if hit is not None and hit[1] is im and hit[2] == hot:
+                self._seen.move_to_end(id(im))
+                n = hit[0]
+            else:
+                self._n += 1
+                n = self._n
+                self._seen[id(im)] = (n, im, hot)     # giữ tham chiếu nên id(im) không bị đối tượng khác dùng lại
+                while len(self._seen) > KEEP:
+                    self._seen.popitem(last=False)
+            self._cur = (n, im, hot)
 
     def publish_visible(self, on):
         self._visible = bool(on)
@@ -180,17 +192,16 @@ class StreamServer:
         return Handler
 
     def _route(self, h):
+        # Trang web lạ dùng DNS rebinding gửi Host là tên miền của nó: từ chối
+        host = (h.headers.get("Host") or "").lower()
+        if host not in (f"127.0.0.1:{self.port}", f"localhost:{self.port}"):
+            self._send(h, 403, "text/plain", b"forbidden")
+            return
         path = h.path.split("?", 1)[0]
         if path in ("/", "/cursor"):
             self._send(h, 200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
         elif path == "/events":
             self._events(h)
-        elif path.startswith("/img/") and path.endswith(".png") and path[5:-4].isdigit():
-            png = self._png_for(int(path[5:-4]))
-            if png is None:
-                self._send(h, 404, "text/plain", b"not found")
-            else:
-                self._send(h, 200, "image/png", png)
         else:
             self._send(h, 404, "text/plain", b"not found")
 
@@ -203,16 +214,13 @@ class StreamServer:
         h.end_headers()
         h.wfile.write(body)
 
-    def _png_for(self, n):
+    def _png_b64(self, n, im):
         with self._lock:
             if n in self._png:
                 return self._png[n]
-            im = self._imgs.get(n)
-        if im is None:
-            return None
         buf = io.BytesIO()
         im.save(buf, format="PNG", compress_level=1)
-        data = buf.getvalue()
+        data = base64.b64encode(buf.getvalue()).decode("ascii")
         with self._lock:
             self._png[n] = data
             while len(self._png) > KEEP:
@@ -222,10 +230,9 @@ class StreamServer:
     def _position(self):
         try:
             loc = self.locate()
-            hx, hy = self.hot()
         except Exception:
-            loc, hx, hy = None, 0, 0
-        pos = {"x": 0.0, "y": 0.0, "hx": int(hx), "hy": int(hy), "gw": 0, "v": False}
+            loc = None
+        pos = {"x": 0.0, "y": 0.0, "gw": 0, "v": False}
         if loc:
             x, y, (left, top, w, hgt) = loc
             if w > 0 and hgt > 0:
@@ -246,9 +253,11 @@ class StreamServer:
                 parts = []
                 cur = self._cur
                 if cur is not None and cur[0] != sent_img:
-                    sent_img = cur[0]
-                    w, hgt = cur[1].size
-                    parts.append(("img", {"id": str(cur[0]), "w": w, "h": hgt}))
+                    n, im, (hx, hy) = cur
+                    sent_img = n
+                    w, hgt = im.size
+                    parts.append(("img", {"id": str(n), "w": w, "h": hgt, "hx": hx, "hy": hy,
+                                          "png": self._png_b64(n, im)}))
                 pos = self._position()
                 if pos != sent_pos:
                     sent_pos = pos

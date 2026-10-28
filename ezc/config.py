@@ -309,7 +309,8 @@ def load_cfg():
     cfg["predict"] = bool(cfg.get("predict", True))
     cfg["stream"] = cfg.get("stream") is True
     port = cfg.get("stream_port")
-    if not (isinstance(port, int) and not isinstance(port, bool) and 1024 <= port <= 65535):
+    # tối đa 65526: chế độ stream còn thử thêm 9 cổng kế tiếp khi cổng bận
+    if not (isinstance(port, int) and not isinstance(port, bool) and 1024 <= port <= 65526):
         cfg["stream_port"] = DEFAULT_CFG["stream_port"]
     if cfg.get("cursor_mode") not in ("overlay", "system"):
         cfg["cursor_mode"] = "overlay"

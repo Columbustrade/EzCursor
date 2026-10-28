@@ -1,4 +1,5 @@
 """Kiểm thử chế độ stream: máy chủ cục bộ cho nguồn Browser của OBS."""
+import base64
 import http.client
 import io
 import json
@@ -118,10 +119,57 @@ def test_page_image_and_position():
         img = until(r, lambda e, d: e == "img")
         pos = until(r, lambda e, d: e == "pos" and d["v"])
         c.close()
-        assert (img["w"], img["h"]) == (32, 24)
-        assert pos == {"x": 0.5, "y": 0.5, "hx": 5, "hy": 6, "gw": 1920, "v": True}
-        png = Image.open(io.BytesIO(get_bytes(f"http://127.0.0.1:{s.port}/img/{img['id']}.png")))
-        assert png.size == (32, 24)
+        assert (img["w"], img["h"], img["hx"], img["hy"]) == (32, 24, 5, 6)
+        assert pos == {"x": 0.5, "y": 0.5, "gw": 1920, "v": True}
+        assert png_of(img).size == (32, 24)
+    finally:
+        s.stop()
+
+
+def png_of(img):
+    return Image.open(io.BytesIO(base64.b64decode(img["png"])))
+
+
+def test_hotspot_travels_with_its_image():
+    """Điểm click gửi cùng ảnh (lấy lúc publish), không lấy lúc gửi: đổi ảnh không làm con trỏ trên stream giật."""
+    hot = [(1, 2)]
+    s = server(hot=lambda: hot[0])
+    try:
+        s.publish_image(Image.new("RGBA", (8, 8)))
+        hot[0] = (90, 90)                      # ảnh khác (vd tìm con trỏ) sắp tới với điểm click khác
+        c, r = open_events(s.port)
+        img = until(r, lambda e, d: e == "img")
+        c.close()
+        assert (img["hx"], img["hy"]) == (1, 2)
+    finally:
+        s.stop()
+
+
+def test_repeated_frames_keep_their_id():
+    """Khung ombre / lấp lánh lặp lại (cùng đối tượng ảnh) giữ id cũ: không mã hóa lại PNG liên tục."""
+    s = server()
+    try:
+        a, b = Image.new("RGBA", (8, 8)), Image.new("RGBA", (9, 9))
+        c, r = open_events(s.port)
+        ids = []
+        for im in (a, b, a):
+            s.publish_image(im)
+            ids.append(until(r, lambda e, d: e == "img")["id"])
+        c.close()
+        assert ids[0] == ids[2] != ids[1]
+    finally:
+        s.stop()
+
+
+def test_rejects_foreign_host():
+    """Trang web lạ dùng DNS rebinding (Host khác 127.0.0.1 / localhost) không đọc được vị trí chuột."""
+    s = server()
+    try:
+        for host, code in ((f"evil.example:{s.port}", 403), (f"localhost:{s.port}", 200), (f"127.0.0.1:{s.port}", 200)):
+            c = http.client.HTTPConnection("127.0.0.1", s.port, timeout=3)
+            c.request("GET", "/cursor", headers={"Host": host})
+            assert c.getresponse().status == code, host
+            c.close()
     finally:
         s.stop()
 
@@ -196,7 +244,6 @@ def test_rapid_images_send_latest():
             last = until(r, lambda e, d: e == "img")
         c.close()
         assert (last["w"], last["h"]) == (50, 50)
-        png = Image.open(io.BytesIO(get_bytes(f"http://127.0.0.1:{s.port}/img/{last['id']}.png")))
-        assert png.size == (50, 50)
+        assert png_of(last).size == (50, 50)
     finally:
         s.stop()

@@ -53,6 +53,7 @@ def test_stream_cfg_defaults_and_repair(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG_PATH", p)
     for raw, want in (({"stream": "x", "stream_port": 99999}, (False, 47391)),
                       ({"stream": True, "stream_port": "47395"}, (True, 47391)),
+                      ({"stream": True, "stream_port": 65530}, (True, 47391)),     # +9 cổng dự phòng vượt 65535
                       ({"stream": True, "stream_port": 47395}, (True, 47395))):
         p.write_text(json.dumps(raw), encoding="utf-8")
         cfg = config.load_cfg()
