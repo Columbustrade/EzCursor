@@ -19,7 +19,7 @@ from ..i18n import LANGUAGES, T
 from ..config import ProfileCfg, default_cfg, my_cursor_files
 from ..colors import mix
 from ..display import monitor_scale
-from ..theme import ACCENT, CARD, FIELD, LINE, MUTED, TEXT, TEXT2
+from ..theme import ACCENT, CARD, CYAN, CYAN_TEXT, FIELD, LINE, MUTED, TEXT, TEXT2
 
 
 class OptionsMixin:
@@ -93,6 +93,24 @@ class OptionsMixin:
             ctk.CTkLabel(t, text=T(sub), font=self.F.b(12), text_color=TEXT2, height=18).pack(anchor="w")
             self.switch(r, var, cmd).pack(side="right")
             ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(5, 0))
+
+        # Chế độ stream (OBS): link + nút sao chép chỉ hiện khi đang bật
+        self.stream_var = tk.BooleanVar(value=self.stream is not None)
+        r = ctk.CTkFrame(box, fg_color="transparent")
+        r.pack(fill="x", padx=18, pady=(5, 0))
+        t = ctk.CTkFrame(r, fg_color="transparent")
+        t.pack(side="left")
+        ctk.CTkLabel(t, text=T("Hiện con trỏ trên stream (OBS)"), font=self.F.b(14, strong=True), text_color=TEXT,
+                     height=20).pack(anchor="w")
+        self.stream_sub = ctk.CTkLabel(t, text="", font=self.F.b(12), text_color=TEXT2, height=18)
+        self.stream_sub.pack(anchor="w")
+        self.switch(r, self.stream_var, self.set_stream).pack(side="right")
+        self.stream_copy = ctk.CTkButton(r, text=T("Sao chép link"), command=self.copy_stream_link, width=10,
+                                         height=28, corner_radius=8, border_width=1, border_color=CYAN,
+                                         fg_color=mix(CARD, CYAN, 0.10), hover_color=mix(CARD, CYAN, 0.22),
+                                         text_color=CYAN_TEXT, font=self.F.b(12, strong=True))
+        self.update_stream_ui()
+        ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(5, 0))
 
         r = ctk.CTkFrame(box, fg_color="transparent")
         r.pack(fill="x", padx=18, pady=12)

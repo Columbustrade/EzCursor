@@ -5,6 +5,7 @@ import re
 import shutil
 import tempfile
 import time
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -153,6 +154,29 @@ def test_follow_has_no_stalls(app):
     worst, n = run(2)
     assert app.active and n > 100
     assert worst < 60, f"khựng {worst:.0f} ms"
+    assert not log_errors()
+
+
+def test_stream_toggle(app):
+    """Bật/tắt chế độ stream nhiều lần: trang OBS mở được, tắt thì đóng hẳn, không lỗi."""
+    for _ in range(3):
+        app.stream_var.set(True)
+        app.set_stream()
+        pump(app, 3)
+        assert app.stream is not None and app.cfg["stream"] and app.ovl.target is app.stream
+        assert "EventSource" in urllib.request.urlopen(app.stream.url, timeout=3).read().decode()
+        url = app.stream.url
+        app.stream_var.set(False)
+        app.set_stream()
+        pump(app, 3)
+        assert app.stream is None and not app.cfg["stream"] and app.ovl.target is None
+        with pytest.raises(OSError):
+            urllib.request.urlopen(url, timeout=3)
+    app.stream_var.set(True)
+    app.set_stream()
+    app.set_language("en")          # dòng cài đặt dựng lại được ở tiếng Anh, máy chủ vẫn chạy
+    pump(app)
+    assert app.stream is not None
     assert not log_errors()
 
 

@@ -45,12 +45,13 @@ from .ui.find import FindMixin
 from .ui.update import UpdateMixin
 from .ui.errors import ErrorsMixin
 from .ui.syscursor_ui import SysCursorMixin
+from .ui.stream_ui import StreamMixin
 
 
 class App(
         WidgetsMixin, TrayMixin, ProfilesMixin, CursorTabMixin, LibraryMixin, CatalogMixin, MakerMixin,
         EffectsMixin, AppsMixin, OptionsMixin, HotkeysMixin, WizardMixin, RenderMixin, TrackingMixin,
-        FindMixin, UpdateMixin, ErrorsMixin, SysCursorMixin):
+        FindMixin, UpdateMixin, ErrorsMixin, SysCursorMixin, StreamMixin):
     """Cửa sổ EzCursor. Mỗi nhóm chức năng nằm trong một mixin ở ezc/ui/."""
 
     PW, PH = 316, 300   # kích thước khung xem trước
@@ -167,6 +168,10 @@ class App(
 
         self.load_style_image()
 
+        self.stream = None              # máy chủ chế độ stream (OBS) khi đang bật
+        if self.cfg["stream"] and not self.start_stream():
+            self.cfg["stream"] = False
+
         self.build_ui()
         self.splashing = False
         if start_in_tray:
@@ -209,6 +214,7 @@ class App(
         self.quitting = True
         log.info("Thoát EzCursor.")
         cleanup()
+        self.stop_stream()
         self.follow.stop()               # luồng bám chuột tự hủy cửa sổ con trỏ của nó
         gc.enable()
         self.fxw.destroy()

@@ -67,6 +67,8 @@ DEFAULT_CFG = {
     "cursor_mode": "overlay",  # "overlay" (lớp phủ, nhiều hiệu ứng) / "system" (con trỏ thật, không độ trễ)
     "predict": True,           # đoán trước vị trí con trỏ theo tốc độ chuột (bù ~nửa khung hình)
     "keep_taskbar": True,      # rê chuột xuống taskbar vẫn dùng con trỏ EzCursor
+    "stream": False,           # chế độ stream: trang cục bộ cho nguồn Browser của OBS
+    "stream_port": 47391,      # cổng của trang đó (bận thì dùng cổng kế tiếp và lưu lại)
     "setup_done": False,      # đã qua màn hình thiết lập lần đầu
     "favorites": [],          # con trỏ yêu thích: mã hình, "bib:<tên>" hoặc "my:<tên file>"
     "profiles": [],      # hồ sơ riêng: [{"name": ..., "exes": [...], "style": {...}}]
@@ -305,6 +307,10 @@ def load_cfg():
     cfg["sys_skip"] = [x for x in sk if isinstance(x, str)][:50]
     cfg["keep_taskbar"] = bool(cfg.get("keep_taskbar", True))
     cfg["predict"] = bool(cfg.get("predict", True))
+    cfg["stream"] = cfg.get("stream") is True
+    port = cfg.get("stream_port")
+    if not (isinstance(port, int) and not isinstance(port, bool) and 1024 <= port <= 65535):
+        cfg["stream_port"] = DEFAULT_CFG["stream_port"]
     if cfg.get("cursor_mode") not in ("overlay", "system"):
         cfg["cursor_mode"] = "overlay"
     made = cfg.get("made_cursors") if isinstance(cfg.get("made_cursors"), dict) else {}

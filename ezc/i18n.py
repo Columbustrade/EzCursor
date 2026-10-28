@@ -174,6 +174,12 @@ TR_EN = {
         "This game uses its own cursor and runs in exclusive Fullscreen, so EzCursor can't show its cursor. Switch the game to Borderless or Windowed.",
     "Giữ con trỏ trên thanh taskbar": "Keep cursor on the taskbar",
     "Rê chuột xuống taskbar vẫn dùng con trỏ EzCursor.": "Keep the EzCursor cursor when you move over the taskbar.",
+    "Hiện con trỏ trên stream (OBS)": "Show cursor on stream (OBS)",
+    "Cho người xem stream thấy con trỏ EzCursor qua nguồn Browser của OBS.":
+        "Let stream viewers see your EzCursor cursor through an OBS Browser source.",
+    "Dán link vào nguồn Browser của OBS: ": "Paste this link into an OBS Browser source: ",
+    "Sao chép link": "Copy link",
+    "Không mở được chế độ stream:": "Couldn't start stream mode:",
     "Đoán trước vị trí con trỏ": "Predict cursor position",
     "Bù thêm nửa khung hình khi rê nhanh; có thể trượt nhẹ khi đổi hướng.":
         "Gains half a frame on fast moves; may overshoot slightly when you change direction.",

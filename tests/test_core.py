@@ -46,6 +46,19 @@ def test_load_cfg_repairs_bad_values(tmp_path, monkeypatch):
     assert cfg["hotkeys"] == ez.DEFAULT_CFG["hotkeys"]
 
 
+def test_stream_cfg_defaults_and_repair(tmp_path, monkeypatch):
+    assert ez.DEFAULT_CFG["stream"] is False and ez.DEFAULT_CFG["stream_port"] == 47391
+    import ezc.config as config
+    p = tmp_path / "config.json"
+    monkeypatch.setattr(config, "CONFIG_PATH", p)
+    for raw, want in (({"stream": "x", "stream_port": 99999}, (False, 47391)),
+                      ({"stream": True, "stream_port": "47395"}, (True, 47391)),
+                      ({"stream": True, "stream_port": 47395}, (True, 47395))):
+        p.write_text(json.dumps(raw), encoding="utf-8")
+        cfg = config.load_cfg()
+        assert (cfg["stream"], cfg["stream_port"]) == want
+
+
 def test_hotkeys():
     hk = ez.DEFAULT_CFG["hotkeys"]
     assert ez.hotkey_parts(hk["toggle"], "toggle") == ["Ctrl", "Alt", "H"]
