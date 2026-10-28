@@ -1,7 +1,5 @@
-✦ Mới trong 2.2.2
-- Dùng ít RAM hơn: khi chuyển qua lại nhiều game có con trỏ chuyển động (ombre, lấp lánh), EzCursor chỉ giữ sẵn khung hình của 2 kiểu dùng gần nhất. Trường hợp nặng nhất giảm từ khoảng 320 MB xuống 185 MB, chuyển game vẫn mượt
-- Bộ cài nhẹ hơn (khoảng 16 MB thay vì 18,5 MB) nhờ bỏ các thư viện EzCursor không dùng tới
+✦ Mới trong 2.2.3
+- Con trỏ bám chuột mượt hơn: việc bám chuột chạy riêng, không còn phải chờ cửa sổ EzCursor. Mở cửa sổ, đổi tab, đổi con trỏ hay vào game có con trỏ chuyển động (ombre, lấp lánh) con trỏ cũng không còn khựng
 
-✦ New in 2.2.2
-- Lower memory use: when switching between several games with animated cursors (ombre, sparkle), EzCursor now keeps ready-made frames only for the 2 most recently used styles. The heaviest case drops from about 320 MB to 185 MB, and switching games stays smooth
-- Smaller installer (about 16 MB instead of 18.5 MB) by leaving out libraries EzCursor doesn't use
+✦ New in 2.2.3
+- Smoother cursor tracking: following the mouse now runs on its own, without waiting for the EzCursor window. Opening the window, switching tabs, changing cursors or entering a game with an animated cursor (ombre, sparkle) no longer makes the cursor stutter
