@@ -63,6 +63,50 @@ def server(locate=lambda: (960, 540, GAME), hot=lambda: (5, 6)):
     return s
 
 
+class FakeOv:
+    hwnd = 7
+    visible = False
+
+    def __init__(self):
+        self.images = []
+
+    def set_image(self, im, pos=None):
+        self.images.append(im)
+
+    def show(self, on):
+        self.visible = on
+
+
+class Rec:
+    def __init__(self):
+        self.images, self.visible = [], []
+
+    def publish_image(self, im):
+        self.images.append(im)
+
+    def publish_visible(self, on):
+        self.visible.append(on)
+
+
+def test_mirror_forwards_and_publishes():
+    inner = FakeOv()
+    m = ez.OverlayMirror(inner)
+    im = Image.new("RGBA", (8, 8))
+    m.set_image(im)
+    m.show(True)                        # chưa có target: chỉ chuyển tiếp
+    assert inner.images == [im] and inner.visible and m.visible and m.hwnd == 7
+    target = Rec()
+    m.target = target
+    assert target.images == [im] and target.visible == [True]     # đẩy ngay trạng thái hiện tại
+    m.show(False)
+    im2 = Image.new("RGBA", (4, 4))
+    m.set_image(im2)
+    assert target.visible == [True, False] and target.images == [im, im2]
+    m.target = None
+    m.set_image(im)                     # bỏ target: không còn gửi
+    assert target.images == [im, im2]
+
+
 def test_page_image_and_position():
     s = server()
     try:

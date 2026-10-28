@@ -68,6 +68,42 @@ def game_view():
     return pt.x, pt.y, (org.x, org.y, rc.right, rc.bottom)
 
 
+class OverlayMirror:
+    """Bọc cửa sổ con trỏ: mọi ảnh / ẩn hiện của nó cũng gửi sang chế độ stream (target), nên mọi thứ hiện ở
+    lớp con trỏ (ombre, lấp lánh, viền giữ chuột, tìm con trỏ) tự lên stream. Thuộc tính khác chuyển thẳng."""
+
+    def __init__(self, ovl):
+        self._ovl = ovl
+        self._last = None
+        self._target = None
+
+    def __getattr__(self, name):
+        return getattr(self._ovl, name)
+
+    @property
+    def target(self):
+        return self._target
+
+    @target.setter
+    def target(self, t):
+        self._target = t
+        if t is not None:           # trang mới mở: có ngay ảnh và trạng thái hiện tại
+            if self._last is not None:
+                t.publish_image(self._last)
+            t.publish_visible(self._ovl.visible)
+
+    def set_image(self, im, pos=None):
+        self._ovl.set_image(im, pos)
+        self._last = im
+        if self._target is not None:
+            self._target.publish_image(im)
+
+    def show(self, on):
+        self._ovl.show(on)
+        if self._target is not None:
+            self._target.publish_visible(on)
+
+
 class _HTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False      # trên Windows SO_REUSEADDR cho mở trùng cổng đang dùng -> không phát hiện cổng bận

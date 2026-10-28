@@ -26,6 +26,7 @@ from .theme import BG, Fonts, load_fonts
 from .icons import logo_frames
 from .overlay import CursorFollower, LayeredOverlay
 from .fx import FxEngine
+from .stream import OverlayMirror
 from .ui.widgets import WidgetsMixin
 from .ui.tray import TrayMixin
 from .ui.profiles import ProfilesMixin
@@ -108,7 +109,7 @@ class App(
         self.gc_n = 0
         self.fxw = LayeredOverlay()      # lớp hiệu ứng, tạo trước để nằm dưới con trỏ
         self.follow = CursorFollower()   # luồng riêng bám chuột, sở hữu cửa sổ con trỏ
-        self.ovl = self.follow.ovl
+        self.ovl = OverlayMirror(self.follow.ovl)       # gương sang chế độ stream (OBS) khi bật
         self.fx = FxEngine()
         self.fx_test_until = 0.0
         self.fx_prev_click = False
