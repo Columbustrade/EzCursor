@@ -154,3 +154,23 @@ def test_follow_has_no_stalls(app):
     assert app.active and n > 100
     assert worst < 60, f"khựng {worst:.0f} ms"
     assert not log_errors()
+
+
+def test_follow_runs_while_ui_busy(app):
+    """Luồng giao diện bận (dựng ảnh, đổi tab...) không cập nhật Tk thì con trỏ vẫn bám chuột (luồng riêng)."""
+    app.hide_to_tray()
+    app.state["exe"] = "Last Epoch.exe"
+    pump(app)
+    assert app.active and app.follow.on
+    app.ovl.moves.clear()
+    t0 = time.perf_counter()
+    while time.perf_counter() - t0 < 0.3:
+        app.state["x"] = 100 + int((time.perf_counter() - t0) * 800) % 1500
+        sum(i * i for i in range(2000))          # việc nặng trên luồng giao diện, không gọi ov.update()
+    m = app.ovl.moves
+    worst = max((b - a for a, b in zip(m, m[1:])), default=1) * 1000
+    assert len(m) > 50 and worst < 30, f"{len(m)} lần dời, khựng {worst:.0f} ms"
+    app.enabled = False
+    pump(app)
+    assert not app.active and not app.follow.on
+    assert not log_errors()

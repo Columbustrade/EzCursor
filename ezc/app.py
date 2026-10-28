@@ -1,6 +1,7 @@
 """Lớp App (ghép từ các mixin) và hàm main() khởi động EzCursor."""
 
 import ctypes
+import gc
 import logging
 import logging.handlers
 import os
@@ -23,7 +24,7 @@ from .config import ProfileCfg, load_cfg, migrate_old_version, write_cfg
 from .display import make_tray_icon
 from .theme import BG, Fonts, load_fonts
 from .icons import logo_frames
-from .overlay import LayeredOverlay
+from .overlay import CursorFollower, LayeredOverlay
 from .fx import FxEngine
 from .ui.widgets import WidgetsMixin
 from .ui.tray import TrayMixin
@@ -100,13 +101,18 @@ class App(
         # Tk gốc (ẩn) và overlay con trỏ trong suốt từng điểm ảnh
         self.ov = tk.Tk()
         self.ov.withdraw()
+        # Bộ dọn rác tự động chạy ở luồng nào đang tạo đối tượng, kể cả luồng bám chuột: nếu nó dọn đối tượng Tk ở đó
+        # thì luồng bám chuột phải chờ Tk (có thể kẹt cả hai). Tắt tự động, tự dọn ở vòng lặp chính (tick_body).
+        gc.disable()
+        self.t_gc = 0.0
+        self.gc_n = 0
         self.fxw = LayeredOverlay()      # lớp hiệu ứng, tạo trước để nằm dưới con trỏ
-        self.ovl = LayeredOverlay()
+        self.follow = CursorFollower()   # luồng riêng bám chuột, sở hữu cửa sổ con trỏ
+        self.ovl = self.follow.ovl
         self.fx = FxEngine()
         self.fx_test_until = 0.0
         self.fx_prev_click = False
         self.fx_t = time.perf_counter()
-        self.ov_hot = (0, 0)
         self.composed = None
         self.cursor_frames = None
         self.preview_photos = None
@@ -116,7 +122,6 @@ class App(
         self.hold_state = None
         self.shown_img = None       # ảnh con trỏ đang hiển thị (không tính hiệu ứng tìm con trỏ)
         self.find_t0 = None         # thời điểm bắt đầu hiệu ứng tìm con trỏ
-        self.find_hot = None
         self.find_ring_only = False
         self.find_cool = 0.0
         self.sh_last_x = None
@@ -127,7 +132,6 @@ class App(
         self.safe_mode = False
         self.err_times = []
         self.logged_errors = set()
-        self.last_move = None
         self.t_active = self.t_keys = self.t_flags = 0.0
         self.want_active = False
         self.cf_next = 0.0
@@ -181,7 +185,6 @@ class App(
         self.tick()
         self.anim()
         self.fx_loop()
-        self.follow_loop()
         self.ov.after(5000, self.auto_check_update)
         if not self.cfg["setup_done"] or "--setup" in sys.argv:
             self.ov.after(700, self.wait_setup)
@@ -205,7 +208,8 @@ class App(
         self.quitting = True
         log.info("Thoát EzCursor.")
         cleanup()
-        self.ovl.destroy()
+        self.follow.stop()               # luồng bám chuột tự hủy cửa sổ con trỏ của nó
+        gc.enable()
         self.fxw.destroy()
         self.save()
         try:

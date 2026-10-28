@@ -245,6 +245,7 @@ class OptionsMixin:
     def set_predict(self):
         self.cfg["predict"] = bool(self.predict_var.get())
         self.save()
+        self.move_overlay()
 
     def set_keep_taskbar(self):
         self.cfg["keep_taskbar"] = bool(self.taskbar_var.get())

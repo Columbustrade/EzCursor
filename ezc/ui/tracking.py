@@ -1,8 +1,7 @@
 """Vòng lặp chính: nhận biết game đang chơi, bám chuột, đoán trước vị trí, hoạt ảnh."""
 
-import collections.abc
 import ctypes
-import math
+import gc
 import time
 import tkinter as tk
 from ctypes import wintypes
@@ -84,91 +83,33 @@ class TrackingMixin:
                 self.clear_system_cursor()
         else:
             show_real_cursor(not (on and self.cfg["hide_real"]))
-            if on:
-                self.move_overlay()
+        self.move_overlay()          # bật / tắt luồng bám chuột (và dời con trỏ tới chuột trước khi hiện)
+        if not self.system_mode():
             self.ovl.show(on)
         self.update_status()
 
-    def record_perf(self, now):
-        """Đo nhịp vòng lặp khi con trỏ đang hiện; ghi log một lần sau ~20 giây."""
-        pf = self.__dict__.setdefault("perf", {"t0": None, "n": 0, "gap": 0.0, "last": 0.0, "done": False})
-        if pf["done"]:
-            return
-        if pf["t0"] is None:
-            pf.update(t0=now, last=now)
-            return
-        if pf["last"] is None:          # vừa quay lại game sau khi tạm tắt
-            pf["last"] = now
-            return
-        pf["n"] += 1
-        pf["gap"] = max(pf["gap"], now - pf["last"])
-        pf["last"] = now
-        if now - pf["t0"] >= 20:
-            pf["done"] = True
-            log.info("Độ trễ lớp phủ: bám chuột mỗi %.1f ms, chậm nhất %.0f ms, đoán trước: %s, màn hình %d Hz",
-                     (now - pf["t0"]) * 1000 / max(1, pf["n"]), pf["gap"] * 1000,
-                     "bật" if self.cfg["predict"] else "tắt", self.refresh_hz())
+    # Điểm click của ảnh con trỏ nằm ở luồng bám chuột: đổi ở đây là luồng đó dùng ngay
+    @property
+    def ov_hot(self):
+        return self.follow.hot
 
-    def refresh_hz(self):
-        if not getattr(self, "_hz", None):
-            try:
-                hdc = user32.GetDC(None)
-                hz = ctypes.windll.gdi32.GetDeviceCaps(hdc, 116)          # VREFRESH
-                user32.ReleaseDC(None, hdc)
-                self._hz = hz if isinstance(hz, int) and 30 <= hz <= 500 else 60
-            except Exception:
-                self._hz = 60
-        return self._hz
+    @ov_hot.setter
+    def ov_hot(self, hot):
+        self.follow.hot = hot
 
-    def predicted(self, x, y):
-        """Đoán vị trí chuột sau ~nửa khung hình theo tốc độ hiện tại (đổi hướng / chậm thì không đoán)."""
-        now = time.perf_counter()
-        hist = self.__dict__.setdefault("mhist", collections.deque(maxlen=16))
-        hist.append((now, x, y))
-        old = next((h for h in hist if now - h[0] <= 0.012), None)
-        if old is None or now - old[0] < 0.003:
-            return x, y
-        dt = now - old[0]
-        vx, vy = (x - old[1]) / dt, (y - old[2]) / dt
-        pv = getattr(self, "prev_v", (0.0, 0.0))
-        self.prev_v = (vx, vy)
-        if vx * pv[0] + vy * pv[1] < 0 or (vx * vx + vy * vy) < 200 ** 2:     # đổi hướng hoặc rê chậm
-            return x, y
-        lead = 0.5 / self.refresh_hz()
-        dx, dy = vx * lead, vy * lead
-        m = math.hypot(dx, dy)
-        if m > 40:
-            dx, dy = dx * 40 / m, dy * 40 / m
-        return int(round(x + dx)), int(round(y + dy))
+    @property
+    def find_hot(self):
+        return self.follow.find_hot
 
-    def follow_loop(self):
-        """Vòng bám chuột riêng, rất nhẹ (~1 ms) – chỉ dời cửa sổ con trỏ khi đang hiện bằng lớp phủ."""
-        if self.quitting:
-            return
-        busy = False
-        try:
-            if self.active and self.find_t0 is None and not self.system_mode():
-                busy = True
-                self.move_overlay(only_if_moved=True)
-                self.record_perf(time.perf_counter())
-        except Exception:
-            self.report_error("follow", once=True)
-        try:
-            self.ov.after(1 if busy else 50, self.follow_loop)
-        except tk.TclError:
-            pass
+    @find_hot.setter
+    def find_hot(self, hot):
+        self.follow.find_hot = hot
 
-    def move_overlay(self, only_if_moved=False):
-        pt = wintypes.POINT()
-        user32.GetCursorPos(ctypes.byref(pt))
-        if self.cfg["predict"] and self.find_hot is None:
-            pt.x, pt.y = self.predicted(pt.x, pt.y)
-        hot = self.find_hot or self.ov_hot
-        key = (pt.x, pt.y, hot)
-        if only_if_moved and key == self.last_move:
-            return
-        self.last_move = key
-        self.ovl.move(int(pt.x - hot[0]), int(pt.y - hot[1]))
+    def move_overlay(self):
+        """Báo luồng bám chuột trạng thái mới và chờ nó dời con trỏ tới chuột (vd vừa đổi ảnh)."""
+        on = self.find_t0 is not None or (self.active and not self.system_mode())
+        self.follow.set(on, self.cfg["predict"])
+        self.follow.kick()
 
     def anim(self):
         """Hiệu ứng khung xem trước và đèn trạng thái (chỉ chạy khi cửa sổ đang mở)."""
@@ -226,6 +167,13 @@ class TrackingMixin:
                 return False
         return True
 
+    def collect_garbage(self, now):
+        """Dọn rác ở luồng giao diện thay cho bộ dọn tự động (đã tắt, xem App.__init__)."""
+        if gc.get_count()[0] >= 2000 or now - self.t_gc >= 1:
+            self.t_gc = now
+            self.gc_n += 1
+            gc.collect(2 if self.gc_n % 60 == 0 else 1)     # dọn toàn bộ ~1 phút/lần
+
     def tick(self):
         """Vòng lặp chính (~4 ms). Lỗi ở đây được ghi log và vòng lặp vẫn chạy tiếp."""
         if self.quitting:
@@ -252,6 +200,7 @@ class TrackingMixin:
                 return False
         if now - self.t_flags >= 0.1:                # tín hiệu từ bộ cài, đổi màn hình: 10 lần/giây
             self.t_flags = now
+            self.collect_garbage(now)
             self.check_monitor()
             self.sync_tray()
             for flag, action in ((SHOW_FLAG, self.show_window), (QUIT_FLAG, self.quit)):
@@ -287,13 +236,6 @@ class TrackingMixin:
             l, r = mouse_buttons()
             c = self.cfg
             self.set_hold("right" if r and c["hold_right"] else "left" if l and c["hold_left"] else None)
-            if not self.system_mode():
-                self.move_overlay(only_if_moved=True)
-                if now - getattr(self, "t_top", 0) >= 0.5:     # giữ cửa sổ con trỏ luôn trên cùng
-                    self.t_top = now
-                    self.ovl.raise_top()
         elif self.hold_state is not None:
             self.set_hold(None)
-        if not self.active and getattr(self, "perf", None):
-            self.perf["last"] = None
         return True
