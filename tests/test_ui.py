@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
 import urllib.request
@@ -178,6 +179,21 @@ def test_stream_toggle(app):
     pump(app)
     assert app.stream is not None
     assert not log_errors()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="đo bằng font thật của Windows")
+def test_options_tab_fits_window(app):
+    """Cửa sổ cố định 1000x700: tab Tùy chọn (cả khi chế độ stream bật, cả tiếng Anh) không được tràn."""
+    for lang in ("vi", "en"):
+        app.set_language(lang)
+        pump(app)
+        app.show_tab("opts")
+        for on in (False, True):
+            app.stream_var.set(on)
+            app.set_stream()
+            pump(app, 5)
+            need, have = app.pages["opts"].winfo_reqheight(), app.content.winfo_height()
+            assert need <= have, f"{lang} stream={on}: cần {need} px, chỉ có {have} px"
 
 
 def test_follow_runs_while_ui_busy(app):

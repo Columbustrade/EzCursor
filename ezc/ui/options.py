@@ -25,13 +25,13 @@ from ..theme import ACCENT, CARD, CYAN, CYAN_TEXT, FIELD, LINE, MUTED, TEXT, TEX
 class OptionsMixin:
     def build_options_tab(self, parent):
         page = ctk.CTkFrame(parent, fg_color="transparent")
-        self.header(page, "TÙY CHỌN", "Cài đặt chung, cập nhật và phím tắt.").pack(anchor="w", pady=(0, 12))
+        self.header(page, "TÙY CHỌN", "Cài đặt chung, cập nhật và phím tắt.").pack(anchor="w", pady=(0, 8))
 
         box = self.card(page)
         box.pack(fill="x")
 
         r = ctk.CTkFrame(box, fg_color="transparent")
-        r.pack(fill="x", padx=18, pady=(5, 0))
+        r.pack(fill="x", padx=18, pady=(3, 0))
         t = ctk.CTkFrame(r, fg_color="transparent")
         t.pack(side="left")
         ctk.CTkLabel(t, text=T("Ngôn ngữ"), font=self.F.b(14, strong=True), text_color=TEXT, height=20).pack(anchor="w")
@@ -45,11 +45,11 @@ class OptionsMixin:
             selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
         self.lang_seg.set(dict(LANGUAGES)[self.cfg["language"]])
         self.lang_seg.pack(side="right")
-        ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(5, 0))
+        ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(3, 0))
 
         if REAL_CURSOR_MODE:
             r = ctk.CTkFrame(box, fg_color="transparent")
-            r.pack(fill="x", padx=18, pady=(5, 0))
+            r.pack(fill="x", padx=18, pady=(3, 0))
             t = ctk.CTkFrame(r, fg_color="transparent")
             t.pack(side="left")
             ctk.CTkLabel(t, text=T("Chế độ con trỏ"), font=self.F.b(14, strong=True), text_color=TEXT,
@@ -63,7 +63,7 @@ class OptionsMixin:
                 unselected_hover_color="#1A1E29", selected_color=mix(CARD, ACCENT, 0.35),
                 selected_hover_color=mix(CARD, ACCENT, 0.45), text_color=TEXT)
             self.mode_seg.pack(side="right")
-            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(5, 0))
+            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(3, 0))
             self.update_mode_ui()
 
         self.hide_var = tk.BooleanVar(value=self.cfg["hide_real"])
@@ -86,18 +86,18 @@ class OptionsMixin:
                  self.splash_var, self.set_splash)]
         for title, sub, var, cmd in rows:
             r = ctk.CTkFrame(box, fg_color="transparent")
-            r.pack(fill="x", padx=18, pady=(5, 0))
+            r.pack(fill="x", padx=18, pady=(3, 0))
             t = ctk.CTkFrame(r, fg_color="transparent")
             t.pack(side="left")
             ctk.CTkLabel(t, text=T(title), font=self.F.b(14, strong=True), text_color=TEXT, height=20).pack(anchor="w")
             ctk.CTkLabel(t, text=T(sub), font=self.F.b(12), text_color=TEXT2, height=18).pack(anchor="w")
             self.switch(r, var, cmd).pack(side="right")
-            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(5, 0))
+            ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(3, 0))
 
         # Chế độ stream (OBS): link + nút sao chép chỉ hiện khi đang bật
         self.stream_var = tk.BooleanVar(value=self.stream is not None)
         r = ctk.CTkFrame(box, fg_color="transparent")
-        r.pack(fill="x", padx=18, pady=(5, 0))
+        r.pack(fill="x", padx=18, pady=(3, 0))
         t = ctk.CTkFrame(r, fg_color="transparent")
         t.pack(side="left")
         ctk.CTkLabel(t, text=T("Hiện con trỏ trên stream (OBS)"), font=self.F.b(14, strong=True), text_color=TEXT,
@@ -110,10 +110,10 @@ class OptionsMixin:
                                          fg_color=mix(CARD, CYAN, 0.10), hover_color=mix(CARD, CYAN, 0.22),
                                          text_color=CYAN_TEXT, font=self.F.b(12, strong=True))
         self.update_stream_ui()
-        ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(5, 0))
+        ctk.CTkFrame(box, fg_color=LINE, height=1, corner_radius=0).pack(fill="x", padx=18, pady=(3, 0))
 
         r = ctk.CTkFrame(box, fg_color="transparent")
-        r.pack(fill="x", padx=18, pady=12)
+        r.pack(fill="x", padx=18, pady=8)
         t = ctk.CTkFrame(r, fg_color="transparent")
         t.pack(side="left")
         v = ctk.CTkFrame(t, fg_color="transparent")
@@ -130,7 +130,7 @@ class OptionsMixin:
         self.cyan_button(r, "Mở thư mục log", self.open_log_folder).pack(side="right", padx=(0, 8))
 
         hk = self.card(page)
-        hk.pack(fill="x", pady=(12, 0))
+        hk.pack(fill="x", pady=(8, 0))
         head = ctk.CTkFrame(hk, fg_color="transparent")
         head.pack(fill="x", padx=16, pady=(10, 4))
         self.caps(head, "PHÍM TẮT").pack(side="left")
