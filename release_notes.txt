@@ -1,7 +1,9 @@
 ✦ Mới trong 2.2.4
 - Bộ cài nhẹ hơn nhiều: khoảng 14 MB thay vì 21,7 MB, nhờ bỏ thư viện numpy bị đóng gói nhầm vào bản 2.2.3 (EzCursor không dùng tới)
+- Con trỏ bám chuột đều hơn trên Windows 11 khi EzCursor chạy ngầm dưới khay hệ thống
 - Vẫn gồm cải tiến của 2.2.3: con trỏ bám chuột bằng luồng riêng, mở cửa sổ, đổi tab, đổi con trỏ hay vào game có con trỏ chuyển động không còn làm con trỏ khựng
 
 ✦ New in 2.2.4
 - Much smaller installer: about 14 MB instead of 21.7 MB, by removing the numpy library that was bundled by mistake in 2.2.3 (EzCursor doesn't use it)
+- Steadier cursor tracking on Windows 11 while EzCursor runs in the system tray
 - Includes the 2.2.3 improvement: the cursor follows the mouse on its own thread, so opening the window, switching tabs, changing cursors or entering a game with an animated cursor no longer makes it stutter
