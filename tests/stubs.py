@@ -17,8 +17,14 @@ def _dpi_for_monitor(monitor, dpi_type, px, py):
     return 0
 
 
-# Như app thật (ezc/system.py): đồng hồ hẹn giờ 1 ms, nếu không luồng bám chuột chờ GIL tới ~16 ms
+# Như app thật (ezc/system.py): đồng hồ hẹn giờ 1 ms, nếu không luồng bám chuột chờ GIL tới ~16 ms.
+# Windows 11 bỏ qua timeBeginPeriod khi tiến trình không có cửa sổ hiện -> tắt chế độ đó (giống keep_timer_resolution)
 if sys.platform == "win32":
+    _k32 = ctypes.WinDLL("kernel32")
+    _k32.GetCurrentProcess.restype = ctypes.c_void_p
+    _st = (ctypes.c_ulong * 3)(1, 0x4, 0)
+    _k32.SetProcessInformation.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_ulong]
+    assert _k32.SetProcessInformation(_k32.GetCurrentProcess(), 4, ctypes.byref(_st), ctypes.sizeof(_st))
     ctypes.WinDLL("winmm").timeBeginPeriod(1)
 
 # Trên Windows thật customtkinter gọi windll lúc nạp font / tính DPI: phải trả số, không phải MagicMock

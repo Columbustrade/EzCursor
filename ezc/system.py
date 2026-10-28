@@ -15,7 +15,22 @@ from .winapi import (
 from .syscursor import restore_system_cursors
 
 
+class PROCESS_POWER_THROTTLING_STATE(ctypes.Structure):
+    _fields_ = [("Version", wintypes.ULONG), ("ControlMask", wintypes.ULONG), ("StateMask", wintypes.ULONG)]
+
+
+def keep_timer_resolution():
+    """Windows 11 bỏ qua timeBeginPeriod khi tiến trình không có cửa sổ hiện (EzCursor chạy dưới khay):
+    báo Windows luôn giữ đồng hồ 1 ms, nếu không luồng bám chuột có lúc chỉ chạy ~16 ms/lần."""
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.SetProcessInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    st = PROCESS_POWER_THROTTLING_STATE(1, 0x4, 0)     # IGNORE_TIMER_RESOLUTION, tắt
+    if not kernel32.SetProcessInformation(kernel32.GetCurrentProcess(), 4, ctypes.byref(st), ctypes.sizeof(st)):
+        log.info("Không giữ được đồng hồ 1 ms khi chạy ngầm (Windows cũ?)")
+
+
 try:          # đồng hồ hẹn giờ của Windows chính xác tới 1 ms (mặc định ~15,6 ms làm vòng lặp chạy chậm)
+    keep_timer_resolution()
     ctypes.windll.winmm.timeBeginPeriod(1)
 except Exception:
     pass
