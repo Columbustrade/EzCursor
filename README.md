@@ -31,6 +31,7 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 - Chạy ngầm dưới khay hệ thống, có thể khởi động cùng Windows
 - Tự kiểm tra và cập nhật phiên bản mới
 - Giao diện tiếng Việt hoặc tiếng Anh (tab **Tùy chọn → Ngôn ngữ**), đổi ngay không cần khởi động lại
+- **Hiện con trỏ khi livestream (OBS)**: người xem thấy đúng con trỏ EzCursor của bạn, không đụng vào game (xem hướng dẫn bên dưới)
 
 ## Cách dùng
 
@@ -47,6 +48,17 @@ Vào mục [**Releases**](https://github.com/ezcursor/EzCursor/releases/latest),
 | Ctrl + Alt + F | Tìm con trỏ (phóng to + vòng sáng) |
 
 Có thể đổi phím tắt trong tab **Tùy chọn** (bấm vào ô phím tắt).
+
+### Hiện con trỏ khi livestream (OBS)
+
+Game Capture của OBS không ghi được lớp phủ của EzCursor, nên người xem sẽ không thấy con trỏ. Cách bật:
+
+1. Tab **Tùy chọn** → bật **Hiện con trỏ trên stream (OBS)** → bấm **Sao chép link**.
+2. Trong OBS: **Sources → + → Browser**, dán link vào ô **URL**, đặt **Width / Height** bằng kích thước khung OBS (vd 1920 × 1080).
+3. Kéo nguồn Browser này nằm **trên** Game Capture, phủ kín khung hình.
+4. Nếu bạn tắt "Ẩn con trỏ thật của game", hãy tắt **Capture Cursor** trong Game Capture để stream không hiện hai con trỏ.
+
+Khung OBS nên cùng tỉ lệ với game (vd cùng 16:9) để con trỏ nằm đúng chỗ. Con trỏ trên stream ẩn khi chuột ra ngoài cửa sổ game. Trang chỉ mở trên máy bạn (127.0.0.1), không ai khác truy cập được.
 
 **Nếu gặp lỗi:** vào tab **Tùy chọn → Mở thư mục log** và gửi file `ezcursor.log` cho tác giả.
 
@@ -83,6 +95,7 @@ Thư mục `tests` chạy được trên Linux với màn hình ảo (phần ri�
 - Per-game profiles: give each game its own cursor and effects (Apps tab → "+ Own profile").
 - Hotkeys: Ctrl+Alt+H toggle, Ctrl+Alt+R next cursor (favorites only once you star some), Ctrl+Alt+F find cursor, Ctrl+Alt+1..5 colors, Ctrl+Alt+Q quit (changeable in the Options tab).
 - Library: EzCursor set, Bibata, your own cursors and an **Online** catalog of new designs; right-click the tray icon to switch cursors quickly.
+- Streaming with OBS: OBS Game Capture can't record the EzCursor overlay. Turn on **Show cursor on stream (OBS)** in the Options tab, click **Copy link**, then add a **Browser** source in OBS with that URL, sized to your canvas (e.g. 1920 × 1080) and placed above Game Capture. Keep the canvas the same aspect ratio as the game. If "Hide the game's real cursor" is off, also untick **Capture Cursor** on Game Capture. The page is only served on 127.0.0.1.
 - EzCursor is an external overlay; it does not modify game files or memory. Use at your own discretion and follow each game's terms of service.
 
 EzCursor is licensed under the [GNU General Public License v3.0](LICENSE).
