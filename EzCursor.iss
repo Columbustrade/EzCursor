@@ -11,6 +11,13 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+; Thông tin phiên bản của chính file bộ cài (Properties)
+VersionInfoVersion={#MyAppVersion}
+VersionInfoProductName={#MyAppName}
+VersionInfoProductVersion={#MyAppVersion}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} Setup
+VersionInfoCopyright=GPL-3.0
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -28,13 +35,25 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=no
+; Tự chọn ngôn ngữ theo Windows (tiếng Việt / tiếng Anh), không hỏi
+ShowLanguageDialog=no
 
 [Languages]
+; Tiếng Anh đứng đầu: Windows không phải tiếng Việt thì dùng tiếng Anh
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "vietnamese"; MessagesFile: "inno\Vietnamese.isl"
+
+[CustomMessages]
+english.Options=Options:
+vietnamese.Options=Tùy chọn:
+english.StartupTask=Start with Windows (runs in the system tray)
+vietnamese.StartupTask=Khởi động cùng Windows (chạy ngầm dưới khay hệ thống)
+english.DeleteUserData=Also delete your EzCursor settings and saved cursors (cursors you made, downloaded or added)?%n%nChoose No to keep them for a later reinstall.
+vietnamese.DeleteUserData=Xóa luôn cài đặt và các con trỏ bạn đã lưu (con trỏ tự tạo, tải về hoặc thêm vào)?%n%nChọn Không để giữ lại cho lần cài sau.
 
 [Tasks]
-Name: "desktopicon"; Description: "Tạo shortcut ngoài Desktop"; GroupDescription: "Tùy chọn:"
-Name: "startup"; Description: "Khởi động cùng Windows (chạy ngầm dưới khay hệ thống)"; GroupDescription: "Tùy chọn:"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:Options}"
+Name: "startup"; Description: "{cm:StartupTask}"; GroupDescription: "{cm:Options}"; Flags: unchecked
 
 [InstallDelete]
 ; Xóa thư viện của bản cũ trước khi cài bản mới
@@ -46,20 +65,16 @@ Source: "dist\EzCursor\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; AppUserModelID: "Columbustrade.EzCursor"
-Name: "{group}\Gỡ cài đặt {#MyAppName}"; Filename: "{uninstallexe}"
+Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; AppUserModelID: "Columbustrade.EzCursor"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "EzCursor"; ValueData: """{app}\{#MyAppExeName}"" --tray"; Tasks: startup; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Mở EzCursor ngay"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 ; Khi EzCursor tự cập nhật (cài im lặng với /RELAUNCH) thì mở lại chương trình
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: ShouldRelaunch
-
-[UninstallDelete]
-; Xóa cài đặt và ảnh con trỏ đã lưu
-Type: filesandordirs; Name: "{userappdata}\EzCursor"
 
 [Code]
 // Tắt EzCursor đang chạy một cách an toàn (để con trỏ chuột được khôi phục)
@@ -107,4 +122,9 @@ begin
   // Xóa chế độ khởi động cùng Windows kể cả khi người dùng bật nó trong phần mềm
   if CurUninstallStep = usUninstall then
     RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'EzCursor');
+  // Cài đặt và con trỏ của người dùng (%APPDATA%\EzCursor): chỉ xóa khi người dùng đồng ý, mặc định giữ lại.
+  // Gỡ im lặng (vd winget uninstall) thì luôn giữ.
+  if (CurUninstallStep = usPostUninstall) and (not UninstallSilent) then
+    if MsgBox(CustomMessage('DeleteUserData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      DelTree(ExpandConstant('{userappdata}\EzCursor'), True, True, True);
 end;

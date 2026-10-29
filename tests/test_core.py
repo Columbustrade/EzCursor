@@ -60,6 +60,35 @@ def test_stream_cfg_defaults_and_repair(tmp_path, monkeypatch):
         assert (cfg["stream"], cfg["stream_port"]) == want
 
 
+def _version_info_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("version_info", ez.APP_ROOT / "tools" / "version_info.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_version_info_matches_app_version(tmp_path):
+    """EzCursor.exe mang đúng số phiên bản của app (Properties, Task Manager; ít bị báo nhầm là virus)."""
+    vi = _version_info_module()
+    assert vi.app_version() == ez.APP_VERSION
+    text = vi.version_info_text("2.3.1")
+    assert "filevers=(2, 3, 1, 0)" in text and "prodvers=(2, 3, 1, 0)" in text
+    for key, val in (("ProductVersion", "2.3.1"), ("FileVersion", "2.3.1"), ("ProductName", "EzCursor"),
+                     ("OriginalFilename", "EzCursor.exe")):
+        assert f"StringStruct('{key}', '{val}')" in text
+    out = tmp_path / "sub" / "version_info.txt"
+    vi.main([str(out)])
+    assert f"StringStruct('ProductVersion', '{ez.APP_VERSION}')" in out.read_text(encoding="utf-8")
+
+
+def test_iss_version_matches_app_version():
+    """Bộ cài và app phải cùng số phiên bản (quy tắc phát hành trong CLAUDE.md)."""
+    iss = (ez.APP_ROOT / "EzCursor.iss").read_text(encoding="utf-8-sig")
+    assert f'#define MyAppVersion "{ez.APP_VERSION}"' in iss
+    assert "VersionInfoVersion={#MyAppVersion}" in iss
+
+
 def test_hotkeys():
     hk = ez.DEFAULT_CFG["hotkeys"]
     assert ez.hotkey_parts(hk["toggle"], "toggle") == ["Ctrl", "Alt", "H"]

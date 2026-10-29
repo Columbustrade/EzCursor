@@ -25,7 +25,10 @@ echo.
 echo === [2/3] Dong goi EzCursor.exe ===
 rem Bo cac thu vien EzCursor khong dung (anh AVIF, quan ly mau, nen zstd/lzma/bz2, XML) cho bo cai nhe hon
 rem numpy: Pillow import tuy chon, may co cai numpy (tools\design_cursors.py) thi bi dong goi them ~26 MB
-%PY% -m PyInstaller --noconfirm --clean --onedir --noconsole --hidden-import pystray._win32 --collect-all customtkinter --add-data "fonts;fonts" --add-data "bibata;bibata" --add-data "assets;assets" --add-data "ezcursor.ico;." --add-data "logo.png;." --exclude-module numpy --exclude-module yaml --exclude-module PIL.AvifImagePlugin --exclude-module PIL._avif --exclude-module PIL.ImageCms --exclude-module PIL._imagingcms --exclude-module compression.zstd --exclude-module _zstd --exclude-module lzma --exclude-module _lzma --exclude-module bz2 --exclude-module _bz2 --exclude-module xml --exclude-module pyexpat --exclude-module pydoc --icon ezcursor.ico --name EzCursor ezcursor.py
+rem Thong tin phien ban cho EzCursor.exe (Properties, Task Manager) lay tu APP_VERSION
+%PY% tools\version_info.py build\version_info.txt
+if errorlevel 1 goto loi
+%PY% -m PyInstaller --noconfirm --clean --onedir --noconsole --version-file build\version_info.txt --hidden-import pystray._win32 --collect-all customtkinter --add-data "fonts;fonts" --add-data "bibata;bibata" --add-data "assets;assets" --add-data "ezcursor.ico;." --add-data "logo.png;." --exclude-module numpy --exclude-module yaml --exclude-module PIL.AvifImagePlugin --exclude-module PIL._avif --exclude-module PIL.ImageCms --exclude-module PIL._imagingcms --exclude-module compression.zstd --exclude-module _zstd --exclude-module lzma --exclude-module _lzma --exclude-module bz2 --exclude-module _bz2 --exclude-module xml --exclude-module pyexpat --exclude-module pydoc --icon ezcursor.ico --name EzCursor ezcursor.py
 if errorlevel 1 goto loi
 
 echo.
