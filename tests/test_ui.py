@@ -59,10 +59,19 @@ def log_errors():
     return [b for b in blocks if " ERROR " in b and "iconbitmap" not in b]
 
 
+def close_log():
+    """Windows khoá file đang mở: đóng ezcursor.log để xoá được AD."""
+    for h in list(ez.log.handlers):
+        ez.log.removeHandler(h)
+        h.close()
+
+
 @pytest.fixture
 def app():
     check_test_dir()
-    shutil.rmtree(AD, ignore_errors=True)
+    close_log()         # test trước lỗi giữa chừng (vd App() không tạo được) có thể còn giữ file log
+    if os.path.exists(AD):
+        shutil.rmtree(AD)       # không bỏ qua lỗi: xoá không được thì báo đúng nguyên nhân
     os.makedirs(AD)
     json.dump({"splash": False, "setup_done": True, "all_apps": True, "shape": "EzDrop", "ombre": True, "ombre_anim": True,
                "profiles": [{"name": "LE", "exes": ["Last Epoch.exe"],
@@ -91,10 +100,10 @@ def app():
     a = ez.App(start_in_tray=False)
     a.state = state
     yield a
-    a.quit()
-    for h in list(ez.log.handlers):     # Windows khoá file đang mở: đóng ezcursor.log để test sau xoá được AD
-        ez.log.removeHandler(h)
-        h.close()
+    try:
+        a.quit()
+    finally:
+        close_log()
 
 
 def pump(app, n=15):
