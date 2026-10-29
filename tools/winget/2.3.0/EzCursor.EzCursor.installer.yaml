@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
+PackageIdentifier: EzCursor.EzCursor
+PackageVersion: 2.3.0
+InstallerType: inno
+Scope: user
+InstallModes:
+- interactive
+- silent
+- silentWithProgress
+UpgradeBehavior: install
+ProductCode: '{C8D323DE-4B41-41D4-952C-B7C3CDEAE4A6}_is1'
+ReleaseDate: 2026-10-29
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/ezcursor/EzCursor/releases/download/v2.3.0/EzCursor_Setup_2.3.0.exe
+  InstallerSha256: A6F2432E716B55E41E73BC7C7A27A6314D387F334A873BA21CABE5248379AAB5
+ManifestType: installer
+ManifestVersion: 1.9.0
